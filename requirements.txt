@@ -1,0 +1,6 @@
+Pillow
+PyMuPDF
+spacy
+numpy
+wordfreq
+torch
