@@ -1,4 +1,3 @@
-# In mlp_model.py
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -35,16 +34,12 @@ def add_training_example(block, label):
 def train_model(model, features, labels, epochs=15, lr=0.05):
     if not features:
         return model
-
     X_train = torch.tensor(features, dtype=torch.float32)
     y_train = torch.tensor(labels, dtype=torch.long)
-
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
-
     dataset = torch.utils.data.TensorDataset(X_train, y_train)
     loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
-
     model.train()
     for _ in range(epochs):
         for batch_X, batch_y in loader:
@@ -54,20 +49,16 @@ def train_model(model, features, labels, epochs=15, lr=0.05):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-
     return model
 
 def predict_blocks(model, blocks):
     if not blocks:
         return []
-    
     model.eval()
     X_test = torch.tensor([get_features(b) for b in blocks], dtype=torch.float32)
-    
     with torch.no_grad():
         outputs = model(X_test)
         _, predictions = torch.max(outputs, 1)
-    
     return [['Header', 'Body', 'Footer', 'Quote', 'Exclude'][p] for p in predictions.tolist()]
 
 def get_features(block):
