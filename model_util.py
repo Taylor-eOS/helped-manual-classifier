@@ -3,55 +3,87 @@ import fitz
 import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
-import string
 import numpy as np
-from math import log2
-from collections import deque
-from wordfreq import word_frequency
 import threading
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
-from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
+from collections import deque
+from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_features, hidden_features):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.norm1 = nn.LayerNorm(hidden_features)
+        self.fc2 = nn.Linear(hidden_features, in_features)
+        self.norm2 = nn.LayerNorm(in_features)
+        self.relu = nn.ReLU()
+        
+    def forward(self, x):
+        # Ensure input is at least 2D
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        residual = x
+        out = self.fc1(x)
+        out = self.relu(self.norm1(out))
+        out = self.fc2(out)
+        out = self.norm2(out)
+        out += residual  # Skip connection
+        return self.relu(out)
 
 class BlockClassifier(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(15, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 32)
-        self.fc4 = nn.Linear(32, 5)
-        self.dropout = nn.Dropout(0.3)
+        self.initial_fc = nn.Linear(15, 64)
         self.relu = nn.ReLU()
+        self.resblock1 = ResidualBlock(64, 128)
+        self.resblock2 = ResidualBlock(64, 128)
+        self.dropout = nn.Dropout(0.2)
+        self.final_fc = nn.Linear(64, 5)
+        
     def forward(self, x):
-        x = self.relu(self.fc1(x))
+        x = self.relu(self.initial_fc(x))
+        x = self.resblock1(x)
+        x = self.resblock2(x)
         x = self.dropout(x)
-        x = self.relu(self.fc2(x))
-        x = self.dropout(x)
-        x = self.relu(self.fc3(x))
-        x = self.dropout(x)
-        return self.fc4(x)
+        return self.final_fc(x)
 
-training_data = [] 
+training_data = deque(maxlen=1)
+normalization_buffer = deque(maxlen=50)
+epsilon = 1e-6
 
-def get_features(block):
-    return [
-        block['x0'], block['y0'],
-        block['width']/612, block['height']/792,
+def compute_norm_params(buffer):
+    arr = np.array(buffer)
+    means = np.mean(arr, axis=0)
+    stds = np.std(arr, axis=0)
+    return means, stds
+
+def get_features(block, doc_width=612, doc_height=792):
+    raw_features = [
+        block['x0'],
+        block['y0'],
+        block['width'] / doc_width,
+        block['height'] / doc_height,
         block['position'],
-        block['letter_count']/100,
-        block['font_size']/24,
+        block['letter_count'] / 100,
+        block['font_size'] / 24,
         block['relative_font_size'],
-        block['num_lines']/10,
+        block['num_lines'] / 10,
         block['punctuation_proportion'],
-        block['average_words_per_sentence']/10,
+        block['average_words_per_sentence'] / 10,
         block['starts_with_number'],
         block['capitalization_proportion'],
         block['average_word_commonality'],
         block['squared_entropy']
     ]
+    if len(normalization_buffer) > 0:
+        means, stds = compute_norm_params(normalization_buffer)
+        norm_features = [(raw - mean) / (std + epsilon) for raw, mean, std in zip(raw_features, means, stds)]
+        return norm_features
+    return raw_features
 
 def get_training_data():
     if not training_data:
@@ -59,12 +91,13 @@ def get_training_data():
     features, labels = zip(*training_data)
     return list(features), list(labels)
 
-def add_training_example(block, label):
+def add_training_example(block, label, doc_width=612, doc_height=792):
     label_map = {'Header': 0, 'Body': 1, 'Footer': 2, 'Quote': 3, 'Exclude': 4}
-    features = get_features(block)
+    features = get_features(block, doc_width, doc_height)
     training_data.append((features, label_map[label]))
+    normalization_buffer.append(features)
 
-def train_model(model, features, labels, epochs=2, lr=0.05):
+def train_model(model, features, labels, epochs=1, lr=0.03):
     if not features:
         return model
     X_train = torch.tensor(features, dtype=torch.float32)
@@ -72,7 +105,7 @@ def train_model(model, features, labels, epochs=2, lr=0.05):
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     criterion = nn.CrossEntropyLoss()
     dataset = torch.utils.data.TensorDataset(X_train, y_train)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=16, shuffle=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
     model.train()
     for _ in range(epochs):
         for batch_X, batch_y in loader:
@@ -84,21 +117,25 @@ def train_model(model, features, labels, epochs=2, lr=0.05):
             optimizer.step()
     return model
 
-def predict_blocks(model, blocks):
+def predict_blocks(model, blocks, doc_width=612, doc_height=792):
     if not blocks:
         return []
     model.eval()
-    X_test = torch.tensor([get_features(b) for b in blocks], dtype=torch.float32)
+    X_test = torch.tensor([get_features(b, doc_width, doc_height) for b in blocks], dtype=torch.float32)
     with torch.no_grad():
         outputs = model(X_test)
         _, predictions = torch.max(outputs, 1)
-    return [['Header', 'Body', 'Footer', 'Quote', 'Exclude'][p] for p in predictions.tolist()]
+    label_map = ['Header', 'Body', 'Footer', 'Quote', 'Exclude']
+    return [label_map[p] for p in predictions.tolist()]
 
 class ManualClassifierGUI:
     def __init__(self, pdf_path):
         self.pdf_path = pdf_path
         self.doc = fitz.open(pdf_path)
         self.total_pages = self.doc.page_count
+        first_page = self.doc.load_page(0)
+        self.doc_width = first_page.rect.width
+        self.doc_height = first_page.rect.height
         self.all_blocks = [None] * self.total_pages
         self.block_classifications = []
         self.current_page = 0
@@ -114,163 +151,12 @@ class ManualClassifierGUI:
         self.schedule_next_page_processing(self.current_page + 1)
         self.load_current_page()
         self.root.mainloop()
-    def setup_ui(self):
-        self.canvas = tk.Canvas(self.root, bg="white")
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.canvas.bind("<Button-1>", self.on_canvas_click)
-        self.control_frame = tk.Frame(self.root)
-        self.control_frame.pack(pady=10, fill=tk.X)
-        self.buttons = []
-        for idx, (text, label) in enumerate(zip(["Header", "Body", "Footer", "Quote", "Excl."], ['Header', 'Body', 'Footer', 'Quote', 'Exclude'])):
-            btn = tk.Button(self.control_frame, text=text, command=lambda l=label: self.set_current_label(l))
-            btn.grid(row=0, column=idx, padx=1)
-            self.buttons.append(btn)
-        self.next_btn = tk.Button(self.control_frame, text="Next", command=self.next_page, bg="#4CAF50", fg="white")
-        self.next_btn.grid(row=0, column=5, padx=1)
-        self.status_var = tk.StringVar()
-        self.status_label = tk.Label(self.root, textvariable=self.status_var, bg="white")
-        self.status_label.pack(pady=4, fill=tk.X)
-        self.root.bind('<KeyPress>', self.on_key_press)
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.zoom = 2
-        self.scale = 1.0
-        self.geometry_set = False
-    def process_page(self, page_num):
-        if page_num >= self.total_pages:
-            return
-        with self.processing_lock:
-            if self.all_blocks[page_num] is not None:
-                return
-        page_blocks = self.extract_page_geometric_features(page_num)
-        with self.processing_lock:
-            if self.all_blocks[page_num] is not None:
-                return
-            starting_global_idx = sum(len(p) for p in self.all_blocks[:page_num] if p is not None)
-            for i, block in enumerate(page_blocks):
-                block['global_idx'] = starting_global_idx + i
-            self.all_blocks[page_num] = page_blocks
-            self.block_classifications.extend(['0'] * len(page_blocks))
-    def extract_page_geometric_features(self, page_num):
-        page = self.doc.load_page(page_num)
-        raw_blocks = page.get_text("blocks")
-        page_blocks = []
-        for idx, block in enumerate(raw_blocks):
-            if len(block) < 6 or not block[4].strip():
-                continue
-            x0, y0, x1, y1, text = block[:5]
-            text = text.strip()
-            features = {
-                'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,
-                'width': x1 - x0,
-                'height': y1 - y0,
-                'position': y0 / page.rect.height,
-                'letter_count': calculate_letter_count(text),
-                'font_size': calculate_average_font_size(page, idx),
-                'num_lines': calculate_num_lines(page, idx),
-                'punctuation_proportion': calculate_punctuation_proportion(text),
-                'average_words_per_sentence': calculate_average_words_per_sentence(text),
-                'starts_with_number': calculate_starts_with_number(text),
-                'capitalization_proportion': calculate_capitalization_proportion(text),
-                'average_word_commonality': get_word_commonality(text),
-                'squared_entropy': calculate_entropy(text)**2,
-                'relative_font_size': calculate_average_font_size(page, idx)/24,
-                'text': text,
-                'type': '0'
-            }
-            page_blocks.append(features)
-        return process_drop_cap(page_blocks)
-    def schedule_next_page_processing(self, next_page_num):
-        if next_page_num >= self.total_pages:
-            return
-        with self.processing_lock:
-            if self.all_blocks[next_page_num] is not None:
-                return
-        threading.Thread(target=self.process_page, args=(next_page_num,)).start()
-    def load_current_page(self):
-        return load_current_page(self)
+    
     def update_model_and_predictions(self):
         features, labels = get_training_data()
         if features:
-            self.mlp_model = train_model(self.mlp_model, features, labels, epochs=2, lr=0.05)
-        pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
-        for local_idx, global_idx in enumerate(self.global_indices):
-            if self.block_classifications[global_idx] == '0':
-                self.block_classifications[global_idx] = pred_labels[local_idx]
-    def draw_blocks(self):
-        return draw_blocks(self)
-    def get_block_color(self, global_idx):
-        colors = {'Header': '#ff0000', 'Body': '#00aaff', 'Footer': '#0000ff', 'Quote': '#ffff00', 'Exclude': '#808080', '0': 'black'}
-        return colors.get(self.block_classifications[global_idx], 'black')
-    def on_canvas_click(self, event):
-        x = event.x / (self.zoom * self.scale)
-        y = event.y / (self.zoom * self.scale)
-        for block in self.current_page_blocks:
-            if block['x0'] <= x <= block['x1'] and block['y0'] <= y <= block['y1']:
-                global_idx = block['global_idx']
-                self.block_classifications[global_idx] = self.current_label
-                add_training_example(block, self.current_label)
-                self.page_buffer.append({'text': block['text'], 'label': self.current_label, 'y0': block['y0'], 'x0': block['x0'], 'global_idx': global_idx})
-                self.update_model_and_predictions()
-                self.draw_blocks()
-                self.status_var.set(f"Page {self.current_page+1}/{self.total_pages} - Trained on {len(get_training_data()[0]) if get_training_data()[0] else 0} examples")
-                break
-    def next_page(self):
-        sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
-        with open("output.txt", "a", encoding="utf-8") as f:
-            for block in sorted_blocks:
-                label = self.block_classifications[block['global_idx']]
-                if label not in ['0', 'Exclude']:
-                    drop_to_file(block['text'], label, self.current_page)
-            f.write(f"<{self.current_page}>\n")
-        manual_global_indices = {b['global_idx'] for b in self.page_buffer}
-        for block in self.current_page_blocks:
-            global_idx = block['global_idx']
-            label = self.block_classifications[global_idx]
-            if label not in ['0', 'Exclude'] and global_idx not in manual_global_indices:
-                add_training_example(block, label)
-        global training_data
-        training_data.clear()
-        self.page_buffer = []
-        self.current_page += 1
-        if self.current_page >= self.total_pages:
-            self.finish_classification()
-            return
-        with self.processing_lock:
-            if self.all_blocks[self.current_page] is None:
-                self.process_page(self.current_page)
-        self.schedule_next_page_processing(self.current_page + 1)
-        self.load_current_page()
-    def set_current_label(self, label):
-        self.current_label = label
-        self.update_button_highlight()
-    def update_button_highlight(self):
-        for btn in self.buttons:
-            text = btn['text']
-            lbl = 'Exclude' if text == 'Excl.' else text
-            btn.config(relief=tk.SUNKEN if lbl == self.current_label else tk.RAISED)
-    def on_key_press(self, event):
-        key = event.keysym.lower()
-        labels = {'h': 'Header', 'b': 'Body', 'f': 'Footer', 'q': 'Quote', 'e': 'Exclude'}
-        if key in labels:
-            self.set_current_label(labels[key])
-    def finish_classification(self):
-        messagebox.showinfo("Complete", "Classification saved to output.txt!")
-        self.doc.close()
-        self.root.quit()
-    def on_close(self):
-        self.doc.close()
-        self.root.destroy()
-
-def main():
-    file_name = input("Enter PDF filename (without extension): ").strip()
-    pdf_path = f"{file_name}.pdf"
-    if not os.path.exists(pdf_path):
-        print(f"Error: {pdf_path} not found!")
-        return
-    open("output.txt", "w").close()
-    ManualClassifierGUI(pdf_path)
-    print("Classification complete!")
-
-if __name__ == "__main__":
-    main()
-
+            self.mlp_model = train_model(self.mlp_model, features, labels, epochs=1, lr=0.03)
+        pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks, self.doc_width, self.doc_height)
+        for local_idx, block in enumerate(self.current_page_blocks):
+            if self.block_classifications[block['global_idx']] == '0':
+                self.block_classifications[block['global_idx']] = pred_labels[local_idx]

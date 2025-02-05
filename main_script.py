@@ -123,7 +123,7 @@ class ManualClassifierGUI:
                 self.page_buffer.append({'text': block['text'],'label': self.current_label,'y0': block['y0'],'x0': block['x0'],'global_idx': global_idx})
                 self.update_model_and_predictions()
                 self.draw_blocks()
-                self.status_var.set(f"Page {self.current_page+1}/{self.total_pages} - Trained on {len(get_training_data()[0])} examples")
+                self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
                 break
 
     def next_page(self):
@@ -174,6 +174,7 @@ class ManualClassifierGUI:
     def on_close(self):
         self.doc.close()
         self.root.destroy()
+
 def main():
     file_name = input("Enter PDF filename (without extension): ").strip()
     pdf_path = f"{file_name}.pdf"
