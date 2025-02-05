@@ -10,10 +10,10 @@ from collections import Counter
 from wordfreq import word_frequency
 import threading
 from mlp_model import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
-from utils import calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
+from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
-
 class ManualClassifierGUI:
+
     def __init__(self, pdf_path):
         self.pdf_path = pdf_path
         self.doc = fitz.open(pdf_path)
@@ -26,14 +26,10 @@ class ManualClassifierGUI:
         self.global_indices = []
         self.mlp_model = BlockClassifier()
         self.processing_lock = threading.Lock()
-        
         self.root = tk.Tk()
         self.root.title("PDF Block Classifier with MLP")
         self.setup_ui()
-        
-        # Process first page synchronously
         self.process_page(self.current_page)
-        # Start background processing for next page
         self.schedule_next_page_processing(self.current_page + 1)
         self.load_current_page()
         self.root.mainloop()
@@ -45,16 +41,11 @@ class ManualClassifierGUI:
         self.control_frame = tk.Frame(self.root)
         self.control_frame.pack(pady=10, fill=tk.X)
         self.buttons = []
-        for idx, (text, label) in enumerate(zip(
-            ["Header", "Body", "Footer", "Quote", "Excl."],
-            ['Header', 'Body', 'Footer', 'Quote', 'Exclude']
-        )):
-            btn = tk.Button(self.control_frame, text=text,
-                          command=lambda l=label: self.set_current_label(l))
+        for idx, (text, label) in enumerate(zip(["Header", "Body", "Footer", "Quote", "Excl."],['Header', 'Body', 'Footer', 'Quote', 'Exclude'])):
+            btn = tk.Button(self.control_frame, text=text,command=lambda l=label: self.set_current_label(l))
             btn.grid(row=0, column=idx, padx=1)
             self.buttons.append(btn)
-        self.next_btn = tk.Button(self.control_frame, text="Next", command=self.next_page,
-                                bg="#4CAF50", fg="white")
+        self.next_btn = tk.Button(self.control_frame, text="Next", command=self.next_page,bg="#4CAF50", fg="white")
         self.next_btn.grid(row=0, column=5, padx=1)
         self.status_var = tk.StringVar()
         self.status_label = tk.Label(self.root, textvariable=self.status_var, bg="white")
@@ -71,9 +62,7 @@ class ManualClassifierGUI:
         with self.processing_lock:
             if self.all_blocks[page_num] is not None:
                 return
-
         page_blocks = self.extract_page_geometric_features(page_num)
-        
         with self.processing_lock:
             if self.all_blocks[page_num] is not None:
                 return
@@ -92,24 +81,7 @@ class ManualClassifierGUI:
                 continue
             x0, y0, x1, y1, text = block[:5]
             text = text.strip()
-            features = {
-                'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,
-                'width': x1 - x0,
-                'height': y1 - y0,
-                'position': y0 / page.rect.height,
-                'letter_count': calculate_letter_count(text),
-                'font_size': calculate_average_font_size(page, idx),
-                'num_lines': calculate_num_lines(page, idx),
-                'punctuation_proportion': calculate_punctuation_proportion(text),
-                'average_words_per_sentence': calculate_average_words_per_sentence(text),
-                'starts_with_number': calculate_starts_with_number(text),
-                'capitalization_proportion': calculate_capitalization_proportion(text),
-                'average_word_commonality': get_word_commonality(text),
-                'squared_entropy': calculate_entropy(text)**2,
-                'page': page_num,
-                'text': text,
-                'type': '0',
-            }
+            features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'text': text, 'type': '0'}
             page_blocks.append(features)
         return process_drop_cap(page_blocks)
 
@@ -137,54 +109,44 @@ class ManualClassifierGUI:
         return draw_blocks(self)
 
     def get_block_color(self, global_idx):
-        colors = {
-            'Header': '#ff0000',
-            'Body': '#00aaff',
-            'Footer': '#0000ff',
-            'Quote': '#ffff00',
-            'Exclude': '#808080',
-            '0': 'black'
-        }
+        colors = {'Header': '#ff0000','Body': '#00aaff','Footer': '#0000ff','Quote': '#ffff00','Exclude': '#808080','0': 'black'}
         return colors.get(self.block_classifications[global_idx], 'black')
 
     def on_canvas_click(self, event):
         x = event.x / (self.zoom * self.scale)
         y = event.y / (self.zoom * self.scale)
         for block in self.current_page_blocks:
-            if (block['x0'] <= x <= block['x1'] and 
-                block['y0'] <= y <= block['y1']):
+            if (block['x0'] <= x <= block['x1'] and block['y0'] <= y <= block['y1']):
                 global_idx = block['global_idx']
                 self.block_classifications[global_idx] = self.current_label
                 add_training_example(block, self.current_label)
-                self.page_buffer.append({
-                    'text': block['text'],
-                    'label': self.current_label,
-                    'y0': block['y0'],
-                    'x0': block['x0']
-                })
+                self.page_buffer.append({'text': block['text'],'label': self.current_label,'y0': block['y0'],'x0': block['x0'],'global_idx': global_idx})
                 self.update_model_and_predictions()
                 self.draw_blocks()
                 self.status_var.set(f"Page {self.current_page+1}/{self.total_pages} - Trained on {len(get_training_data()[0])} examples")
                 break
 
     def next_page(self):
-        if self.page_buffer:
-            sorted_blocks = sorted(self.page_buffer, key=lambda x: (x['y0'], x['x0']))
-            with open("output.txt", "a", encoding="utf-8") as f:
-                for block in sorted_blocks:
-                    if block['label'] != 'Exclude':
-                        f.write(f"[{block['label']}]\n{block['text']}\n\n")
+        sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
+        with open("output.txt", "a", encoding="utf-8") as f:
+            for block in sorted_blocks:
+                label = self.block_classifications[block['global_idx']]
+                if label not in ['0', 'Exclude']:
+                    drop_to_file(block['text'], label, self.current_page)
+        manual_global_indices = {b['global_idx'] for b in self.page_buffer}
+        for block in self.current_page_blocks:
+            global_idx = block['global_idx']
+            label = self.block_classifications[global_idx]
+            if label not in ['0', 'Exclude'] and global_idx not in manual_global_indices:
+                add_training_example(block, label)
         self.page_buffer = []
         self.current_page += 1
-
         if self.current_page >= self.total_pages:
             self.finish_classification()
             return
-
         with self.processing_lock:
             if self.all_blocks[self.current_page] is None:
                 self.process_page(self.current_page)
-
         self.schedule_next_page_processing(self.current_page + 1)
         self.load_current_page()
 
@@ -200,7 +162,7 @@ class ManualClassifierGUI:
 
     def on_key_press(self, event):
         key = event.keysym.lower()
-        labels = {'h':'Header', 'b':'Body', 'f':'Footer', 'q':'Quote', 'e':'Exclude'}
+        labels = {'h':'Header','b':'Body','f':'Footer','q':'Quote','e':'Exclude'}
         if key in labels:
             self.set_current_label(labels[key])
 
@@ -212,7 +174,6 @@ class ManualClassifierGUI:
     def on_close(self):
         self.doc.close()
         self.root.destroy()
-
 def main():
     file_name = input("Enter PDF filename (without extension): ").strip()
     pdf_path = f"{file_name}.pdf"
@@ -222,6 +183,6 @@ def main():
     open("output.txt", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete!")
-
 if __name__ == "__main__":
     main()
+
