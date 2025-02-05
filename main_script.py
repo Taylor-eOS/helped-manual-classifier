@@ -9,7 +9,7 @@ from math import log2
 from collections import Counter
 from wordfreq import word_frequency
 import threading
-from mlp_model import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
+from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
 from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
 class ManualClassifierGUI:
