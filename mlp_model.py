@@ -31,7 +31,7 @@ def add_training_example(block, label):
     features = get_features(block)
     training_data.append((features, label_map[label]))
 
-def train_model(model, features, labels, epochs=15, lr=0.05):
+def train_model(model, features, labels, epochs=5, lr=0.05):
     if not features:
         return model
     X_train = torch.tensor(features, dtype=torch.float32)
