@@ -12,8 +12,8 @@ import threading
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
 from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
-class ManualClassifierGUI:
 
+class ManualClassifierGUI:
     def __init__(self, pdf_path):
         self.pdf_path = pdf_path
         self.doc = fitz.open(pdf_path)
@@ -167,7 +167,7 @@ class ManualClassifierGUI:
             self.set_current_label(labels[key])
 
     def finish_classification(self):
-        messagebox.showinfo("Complete", "Classification saved to output.txt!")
+        messagebox.showinfo("Complete", "Classification saved to output file")
         self.doc.close()
         self.root.quit()
 
@@ -179,11 +179,12 @@ def main():
     file_name = input("Enter PDF filename (without extension): ").strip()
     pdf_path = f"{file_name}.pdf"
     if not os.path.exists(pdf_path):
-        print(f"Error: {pdf_path} not found!")
+        print(f"Error: {pdf_path} not found")
         return
     open("output.txt", "w").close()
     ManualClassifierGUI(pdf_path)
-    print("Classification complete!")
+    print("Classification complete")
+
 if __name__ == "__main__":
     main()
 
