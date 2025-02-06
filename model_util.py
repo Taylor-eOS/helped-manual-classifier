@@ -51,7 +51,7 @@ class BlockClassifier(nn.Module):
         x = self.dropout(x)
         return self.final_fc(x)
 
-training_data = deque(maxlen=1)
+training_data = deque(maxlen=16)
 normalization_buffer = deque(maxlen=50)
 epsilon = 1e-6
 
