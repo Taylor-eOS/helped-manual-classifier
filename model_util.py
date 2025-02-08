@@ -35,7 +35,7 @@ class ResidualBlock(nn.Module):
 class BlockClassifier(nn.Module):
     def __init__(self):
         super().__init__()
-        self.initial_fc = nn.Linear(15, 64)
+        self.initial_fc = nn.Linear(16, 64)
         self.relu = nn.ReLU()
         self.resblock1 = ResidualBlock(64, 128)
         self.resblock2 = ResidualBlock(64, 128)
@@ -74,7 +74,8 @@ def get_features(block, doc_width=612, doc_height=792):
         block['starts_with_number'],
         block['capitalization_proportion'],
         block['average_word_commonality'],
-        block['squared_entropy']
+        block['squared_entropy'],
+        block['odd_even']
     ]
     if len(normalization_buffer) > 0:
         means, stds = compute_norm_params(normalization_buffer)
@@ -205,6 +206,7 @@ class ManualClassifierGUI:
                 capitalization_proportion = calculate_capitalization_proportion(text_content)
                 average_word_commonality = get_word_commonality(text_content)
                 squared_entropy = calculate_entropy(text_content) ** 2
+                odd_even = 1 if page_number % 2 == 0 else 0
                 block = {
                     "x0": x0,
                     "y0": y0,
@@ -220,7 +222,8 @@ class ManualClassifierGUI:
                     "starts_with_number": starts_with_number,
                     "capitalization_proportion": capitalization_proportion,
                     "average_word_commonality": average_word_commonality,
-                    "squared_entropy": squared_entropy
+                    "squared_entropy": squared_entropy,
+                    "odd_even": odd_even
                 }
                 block["global_idx"] = self.global_idx_counter
                 self.global_idx_counter += 1

@@ -81,7 +81,7 @@ class ManualClassifierGUI:
                 continue
             x0, y0, x1, y1, text = block[:5]
             text = text.strip()
-            features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'text': text, 'type': '0'}
+            features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'odd_even': 1 if page_num % 2 == 0 else 0, 'text': text, 'type': '0'}
             page_blocks.append(features)
         return process_drop_cap(page_blocks)
 
@@ -99,7 +99,7 @@ class ManualClassifierGUI:
     def update_model_and_predictions(self):
         features, labels = get_training_data()
         if features:
-            self.mlp_model = train_model(self.mlp_model, features, labels, epochs=15, lr=0.05)
+            self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
         pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
         for local_idx, global_idx in enumerate(self.global_indices):
             if self.block_classifications[global_idx] == '0':
