@@ -182,6 +182,7 @@ def main():
         print(f"Error: {pdf_path} not found")
         return
     open("output.txt", "w").close()
+    open("debug.csv", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 

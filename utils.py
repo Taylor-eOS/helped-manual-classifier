@@ -40,10 +40,18 @@ def delete_if_exists(del_file):
         os.remove(del_file)
 
 # Feature calculation functions
-def calculate_height(y0, y1): return y1 - y0
-def calculate_width(x0, x1): return x1 - x0
-def calculate_position(y0, page_height): return y0 / page_height
-def calculate_letter_count(text): return sum(c.isalpha() for c in text)
+def calculate_height(y0, y1):
+    return y1 - y0
+
+def calculate_width(x0, x1):
+    return x1 - x0
+
+def calculate_position(y0, page_height):
+    return y0 / page_height
+
+def calculate_letter_count(text):
+    #return sum(c.isalpha() for c in text)
+    return sum(c.isalpha() or c.isnumeric() for c in text)
 
 def calculate_punctuation_proportion(text):
     total = len(text)
@@ -91,16 +99,13 @@ def process_drop_cap(page_data):
     font_sizes = [block['font_size'] for block in page_data]
     if not font_sizes:
         return page_data
-    
     avg_size = np.mean(font_sizes)
     std_dev = np.std(font_sizes)
     threshold = avg_size + 2 * std_dev
-    
     for i, block in enumerate(page_data):
         if block['font_size'] > threshold and block['letter_count'] < 10:
             if i + 1 < len(page_data):
                 page_data[i]['font_size'] = page_data[i+1]['font_size']
-    
     max_size = max(font_sizes)
     for block in page_data:
         block['relative_font_size'] = block['font_size'] / max_size
