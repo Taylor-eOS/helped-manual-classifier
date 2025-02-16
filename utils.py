@@ -5,6 +5,7 @@ import numpy as np
 from math import log2
 from collections import Counter
 from wordfreq import word_frequency
+import json
 
 def extract_blocks(pdf_path):
     blocks = []
@@ -23,17 +24,17 @@ def extract_blocks(pdf_path):
     return blocks
 
 def drop_to_file(block_text, block_type, block_page_number):
-    with open("output.txt", "a", encoding='utf-8') as file:
-        if block_type == 'Header':
-            file.write(f"<h1>{block_text}</h1>\n<{block_page_number + 1}>\n\n")
-        elif block_type == 'Body':
-            file.write(f"<body>{block_text}</body>\n<{block_page_number + 1}>\n\n")
-        elif block_type == 'Footer':
-            file.write(f"<footer>{block_text}</footer>\n<{block_page_number + 1}>\n\n")
-        elif block_type == 'Quote':
-            file.write(f"<blockquote>{block_text}</blockquote>\n<{block_page_number + 1}>\n\n")
-        else:
-            file.write(f"{block_text} ERROR\n\n")
+    label_mapping = {
+        "header": "h1",
+        "body": "p",
+        "footer": "footer",
+        "quote": "blockquote"}
+    entry = {
+        "page": block_page_number + 1,
+        "text": block_text,
+        "label": label_mapping.get(block_type, "unknown")}
+    with open("output.json", "a", encoding='utf-8') as file:
+        file.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 def delete_if_exists(del_file):
     if os.path.exists(del_file):

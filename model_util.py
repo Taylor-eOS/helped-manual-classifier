@@ -111,7 +111,7 @@ def get_training_data():
     return list(features), list(labels)
 
 def add_training_example(block, label, doc_width=612, doc_height=792):
-    label_map = {'Header': 0, 'Body': 1, 'Footer': 2, 'Quote': 3, 'Exclude': 4}
+    label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
     features = get_features(block, doc_width, doc_height, True)
     training_data.append((features, label_map[label]))
     normalization_buffer.append(features)
@@ -144,6 +144,6 @@ def predict_blocks(model, blocks, doc_width=612, doc_height=792):
     with torch.no_grad():
         outputs = model(X_test)
         _, predictions = torch.max(outputs, 1)
-    label_map = ['Header', 'Body', 'Footer', 'Quote', 'Exclude']
+    label_map = ['header', 'body', 'footer', 'quote', 'exclude']
     return [label_map[p] for p in predictions.tolist()]
 
