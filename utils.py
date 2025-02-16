@@ -30,11 +30,12 @@ def drop_to_file(block_text, block_type, block_page_number):
         "footer": "footer",
         "quote": "blockquote"}
     entry = {
+        "label": label_mapping.get(block_type, "unknown"),
         "page": block_page_number + 1,
-        "text": block_text,
-        "label": label_mapping.get(block_type, "unknown")}
+        "text": block_text}
     with open("output.json", "a", encoding='utf-8') as file:
         file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(entry)
 
 def delete_if_exists(del_file):
     if os.path.exists(del_file):
