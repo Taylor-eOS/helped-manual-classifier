@@ -9,11 +9,13 @@ from math import log2
 from collections import Counter
 from wordfreq import word_frequency
 import threading
-"""import torch"""
+import torch
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
 from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
 from embed import get_embedding
+
+save_weights = False #Turn this on in pretraining
 
 class ManualClassifierGUI:
     def __init__(self, pdf_path):
@@ -29,12 +31,13 @@ class ManualClassifierGUI:
         self.mlp_model = BlockClassifier()
         self.processing_lock = threading.Lock()
         self.root = tk.Tk()
-        self.root.title("PDF Block Classifier with MLP")
+        self.root.title("PDF Block Classifier with MLP Help")
         self.setup_ui()
         self.process_page(self.current_page)
         self.schedule_next_page_processing(self.current_page + 1)
         self.load_current_page()
         self.root.mainloop()
+        self.load_model_weights()
 
     def setup_ui(self):
         self.canvas = tk.Canvas(self.root, bg="white")
@@ -77,9 +80,9 @@ class ManualClassifierGUI:
     def extract_page_geometric_features(self, page_num):
         page = self.doc.load_page(page_num)
         raw_blocks = page.get_text("blocks")
-        """text_list = [block[4] for block in raw_blocks]
-        print(text_list)
-        get_embedding(text_list)"""
+        #text_list = [block[4] for block in raw_blocks]
+        #print(text_list)
+        #get_embedding(text_list)
         page_blocks = []
         for idx, block in enumerate(raw_blocks):
             if len(block) < 6 or not block[4].strip():
@@ -103,7 +106,7 @@ class ManualClassifierGUI:
 
     def update_model_and_predictions(self):
         features, labels = get_training_data()
-        """print(f"Training data - Features: {len(features)}, Labels: {len(labels)}")"""
+        #print(f"Training data - Features: {len(features)}, Labels: {len(labels)}")
         if features:
             self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
         pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
@@ -172,6 +175,9 @@ class ManualClassifierGUI:
             self.set_current_label(labels[key])
 
     def finish_classification(self):
+        if save_weights:
+            torch.save(self.mlp_model.state_dict(), 'model_weights.pth')
+            print("Model weights saved")
         messagebox.showinfo("Complete", "Classification saved to output file")
         self.doc.close()
         self.root.quit()
@@ -179,6 +185,12 @@ class ManualClassifierGUI:
     def on_close(self):
         self.doc.close()
         self.root.destroy()
+
+    def load_model_weights(self):
+        weights_file = "weights.pth"
+        if os.path.exists(weights_file):
+            self.mlp_model.load_state_dict(torch.load(weights_file))
+            print(f"Loaded pre-trained weights from {weights_file}")
 
 def main():
     file_name = input("Enter PDF filename (without extension): ").strip()
@@ -188,7 +200,6 @@ def main():
         return
     open("output.json", "w").close()
     open("debug.csv", "w").close()
-    #open("omitted.txt", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 
