@@ -7,6 +7,8 @@ from collections import Counter
 from wordfreq import word_frequency
 import json
 
+debug = False
+
 def extract_blocks(pdf_path):
     blocks = []
     doc = fitz.open(pdf_path)
@@ -24,18 +26,21 @@ def extract_blocks(pdf_path):
     return blocks
 
 def drop_to_file(block_text, block_type, block_page_number):
-    label_mapping = {
-        "header": "h1",
-        "body": "p",
-        "footer": "footer",
-        "quote": "blockquote"}
-    entry = {
-        "label": label_mapping.get(block_type, "unknown"),
-        "page": block_page_number + 1,
-        "text": block_text}
+    if debug: print(type(block_text), type(block_type), type(block_page_number), sep='\n', end='\n')
+    label_mapping = {"header": "h1", "body": "p", "footer": "footer", "quote": "blockquote", "exclude": "exclude"}
+    if block_type == "exclude":
+        entry = {
+            "label": block_type,
+            "page": block_page_number + 1,
+            "text": ""}
+    else:
+        entry = {
+            "label": label_mapping.get(block_type, "unknown"),
+            "page": block_page_number + 1,
+            "text": block_text}
     with open("output.json", "a", encoding='utf-8') as file:
         file.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    print(entry)
+    if debug: print(entry)
 
 def delete_if_exists(del_file):
     if os.path.exists(del_file):

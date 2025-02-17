@@ -9,6 +9,7 @@ from math import log2
 from collections import Counter
 from wordfreq import word_frequency
 import threading
+"""import torch"""
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
 from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
@@ -76,9 +77,9 @@ class ManualClassifierGUI:
     def extract_page_geometric_features(self, page_num):
         page = self.doc.load_page(page_num)
         raw_blocks = page.get_text("blocks")
-        #text_list = [block[4] for block in raw_blocks]
-        #print(text_list)
-        #get_embedding(text_list)
+        """text_list = [block[4] for block in raw_blocks]
+        print(text_list)
+        get_embedding(text_list)"""
         page_blocks = []
         for idx, block in enumerate(raw_blocks):
             if len(block) < 6 or not block[4].strip():
@@ -102,7 +103,7 @@ class ManualClassifierGUI:
 
     def update_model_and_predictions(self):
         features, labels = get_training_data()
-        #print(f"Training data - Features: {len(features)}, Labels: {len(labels)}")  # Debug
+        """print(f"Training data - Features: {len(features)}, Labels: {len(labels)}")"""
         if features:
             self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
         pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
@@ -135,13 +136,13 @@ class ManualClassifierGUI:
         sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
         for block in sorted_blocks:
             label = self.block_classifications[block['global_idx']]
-            if label not in ['0', 'exclude']:
+            if label not in ['0']:
                 drop_to_file(block['text'], label, self.current_page)
         manual_global_indices = {b['global_idx'] for b in self.page_buffer}
         for block in self.current_page_blocks:
             global_idx = block['global_idx']
             label = self.block_classifications[global_idx]
-            if label not in ['0', 'exclude'] and global_idx not in manual_global_indices:
+            if global_idx not in manual_global_indices:
                 add_training_example(block, label)
         self.page_buffer = []
         self.current_page += 1
@@ -187,6 +188,7 @@ def main():
         return
     open("output.json", "w").close()
     open("debug.csv", "w").close()
+    #open("omitted.txt", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 
