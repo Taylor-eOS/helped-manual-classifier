@@ -19,12 +19,22 @@ def load_page_image(doc, page_num, zoom, root):
 def draw_blocks(self):
     for block in self.current_page_blocks:
         global_idx = block['global_idx']
-        color = self.get_block_color(global_idx)
+        color = get_block_color(self.block_classifications[global_idx])
         x0 = block['x0'] * self.zoom * self.scale
         y0 = block['y0'] * self.zoom * self.scale
         x1 = block['x1'] * self.zoom * self.scale
         y1 = block['y1'] * self.zoom * self.scale
         self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=2)
+
+def get_block_color(global_idx):
+    colors = {'header': '#ff0000','body': '#00aaff','footer': '#0000ff','quote': '#ffff00','exclude': '#808080','0': 'black'}
+    return colors.get(global_idx, 'white')
+
+def update_button_highlight(buttons, current_label):
+    for btn in buttons:
+        text = btn['text']
+        label = 'exclude' if text == 'Excl.' else text.lower()
+        btn.config(relief=tk.SUNKEN if label == current_label else tk.RAISED)
 
 def load_current_page(self):
     if self.current_page >= self.total_pages:

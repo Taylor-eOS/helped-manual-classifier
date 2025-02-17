@@ -9,22 +9,6 @@ import json
 
 debug = False
 
-def extract_blocks(pdf_path):
-    blocks = []
-    doc = fitz.open(pdf_path)
-    for page_num, page in enumerate(doc):
-        for block in page.get_text("blocks"):
-            blocks.append({
-                'page': page_num,
-                'x0': block[0],
-                'y0': block[1],
-                'x1': block[2],
-                'y1': block[3],
-                'raw_block': block
-            })
-    doc.close()
-    return blocks
-
 def drop_to_file(block_text, block_type, block_page_number):
     if debug: print(type(block_text), type(block_type), type(block_page_number), sep='\n', end='\n')
     label_mapping = {"header": "h1", "body": "p", "footer": "footer", "quote": "blockquote", "exclude": "exclude"}
@@ -41,6 +25,35 @@ def drop_to_file(block_text, block_type, block_page_number):
     with open("output.json", "a", encoding='utf-8') as file:
         file.write(json.dumps(entry, ensure_ascii=False) + "\n")
     if debug: print(entry)
+
+def extract_blocks(pdf_path):
+    blocks = []
+    doc = fitz.open(pdf_path)
+    for page_num, page in enumerate(doc):
+        for block in page.get_text("blocks"):
+            blocks.append({
+                'page': page_num,
+                'x0': block[0],
+                'y0': block[1],
+                'x1': block[2],
+                'y1': block[3],
+                'raw_block': block
+            })
+    doc.close()
+    return blocks
+
+def extract_page_geometric_features(doc, page_num):
+    page = doc.load_page(page_num)
+    raw_blocks = page.get_text("blocks")
+    page_blocks = []
+    for idx, block in enumerate(raw_blocks):
+        if len(block) < 6 or not block[4].strip():
+            continue
+        x0, y0, x1, y1, text = block[:5]
+        text = text.strip()
+        features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'odd_even': 1 if page_num % 2 == 0 else 0, 'text': text, 'type': '0'}
+        page_blocks.append(features)
+    return process_drop_cap(page_blocks)
 
 def delete_if_exists(del_file):
     if os.path.exists(del_file):

@@ -11,8 +11,8 @@ from wordfreq import word_frequency
 import threading
 import torch
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
-from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
-from gui_core import load_current_page, draw_blocks
+from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap, extract_page_geometric_features
+from gui_core import load_current_page, draw_blocks, update_button_highlight
 from embed import get_embedding
 
 save_weights = False #Turn this on in pretraining
@@ -67,7 +67,7 @@ class ManualClassifierGUI:
         with self.processing_lock:
             if self.all_blocks[page_num] is not None:
                 return
-        page_blocks = self.extract_page_geometric_features(page_num)
+        page_blocks = extract_page_geometric_features(self.doc, page_num)
         with self.processing_lock:
             if self.all_blocks[page_num] is not None:
                 return
@@ -78,20 +78,7 @@ class ManualClassifierGUI:
             self.block_classifications.extend(['0'] * len(page_blocks))
 
     def extract_page_geometric_features(self, page_num):
-        page = self.doc.load_page(page_num)
-        raw_blocks = page.get_text("blocks")
-        #text_list = [block[4] for block in raw_blocks]
-        #print(text_list)
-        #get_embedding(text_list)
-        page_blocks = []
-        for idx, block in enumerate(raw_blocks):
-            if len(block) < 6 or not block[4].strip():
-                continue
-            x0, y0, x1, y1, text = block[:5]
-            text = text.strip()
-            features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'odd_even': 1 if page_num % 2 == 0 else 0, 'text': text, 'type': '0'}
-            page_blocks.append(features)
-        return process_drop_cap(page_blocks)
+        return extract_page_geometric_features(self.doc, page_num)
 
     def schedule_next_page_processing(self, next_page_num):
         if next_page_num >= self.total_pages:
@@ -105,11 +92,11 @@ class ManualClassifierGUI:
         return load_current_page(self)
 
     def update_model_and_predictions(self):
-        global training_data, normalization_buffer  # Ensure global reference
+        global training_data, normalization_buffer
         features, labels = get_training_data()
         if features:
             self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
-            if 'training_data' in globals() and training_data:  # Ensure it exists before clearing
+            if 'training_data' in globals() and training_data:
                 training_data.clear()
                 normalization_buffer.clear()
         pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
@@ -119,10 +106,6 @@ class ManualClassifierGUI:
 
     def draw_blocks(self):
         return draw_blocks(self)
-
-    def get_block_color(self, global_idx):
-        colors = {'header': '#ff0000','body': '#00aaff','footer': '#0000ff','quote': '#ffff00','exclude': '#808080','0': 'black'}
-        return colors.get(self.block_classifications[global_idx], 'black')
 
     def on_canvas_click(self, event):
         x = event.x / (self.zoom * self.scale)
@@ -166,10 +149,13 @@ class ManualClassifierGUI:
         self.update_button_highlight()
 
     def update_button_highlight(self):
-        for btn in self.buttons:
-            text = btn['text']
-            label = 'exclude' if text == 'Excl.' else text.lower()
-            btn.config(relief=tk.SUNKEN if label == self.current_label else tk.RAISED)
+        update_button_highlight(self.buttons, self.current_label)
+
+    def on_key_press(self, event):
+        key = event.keysym.lower()
+        labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
+        if key in labels:
+            self.set_current_label(labels[key])
 
     def on_key_press(self, event):
         key = event.keysym.lower()
