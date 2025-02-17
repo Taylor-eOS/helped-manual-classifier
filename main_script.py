@@ -11,7 +11,7 @@ from wordfreq import word_frequency
 import threading
 import torch
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
-from utils import drop_to_file, calculate_height, calculate_width, calculate_position, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
+from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import load_current_page, draw_blocks
 from embed import get_embedding
 
@@ -105,10 +105,13 @@ class ManualClassifierGUI:
         return load_current_page(self)
 
     def update_model_and_predictions(self):
+        global training_data, normalization_buffer  # Ensure global reference
         features, labels = get_training_data()
-        #print(f"Training data - Features: {len(features)}, Labels: {len(labels)}")
         if features:
             self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
+            if 'training_data' in globals() and training_data:  # Ensure it exists before clearing
+                training_data.clear()
+                normalization_buffer.clear()
         pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
         for local_idx, global_idx in enumerate(self.global_indices):
             if self.block_classifications[global_idx] == '0':
