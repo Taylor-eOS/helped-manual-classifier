@@ -1,3 +1,4 @@
+import os
 import json
 import fitz
 import torch
@@ -5,7 +6,6 @@ import sys
 from collections import defaultdict
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, training_data, normalization_buffer, EPOCHS, LEARNING_RATE
 from utils import extract_page_geometric_features, process_drop_cap
-from main_script import
 
 print_predictions = True
 
@@ -15,8 +15,8 @@ class PDFEvaluator:
         self.total_pages = self.doc.page_count
         self.ground_truth = self.load_ground_truth(ground_truth_path)
         self.model = BlockClassifier()
-        self.current_page = 0  #0-based index
         self.load_model_weights()
+        self.current_page = 0  #0-based index
 
     def load_ground_truth(self, gt_path):
         truth = defaultdict(list)
@@ -30,13 +30,6 @@ class PDFEvaluator:
     def process_page(self, page_num):
         blocks = extract_page_geometric_features(self.doc, page_num)
         return process_drop_cap(blocks)
-
-    def load_model_weights(self):
-        try:
-            self.model.load_state_dict(torch.load('weights_pretrained.pth'))
-            print("Loaded existing weights")
-        except FileNotFoundError:
-            print("Using fresh model weights. To load it, name your file weights_pretrained.pth")
 
     def evaluate(self):
         total_correct = 0
@@ -77,6 +70,12 @@ class PDFEvaluator:
         final_accuracy = total_correct / total_samples if total_samples else 0
         print(f"\nFinal Accuracy: {final_accuracy:.2%}")
         return final_accuracy
+
+    def load_model_weights(self):
+        weights_file = "weights_pretrained.pth"
+        if os.path.exists(weights_file):
+            self.model.load_state_dict(torch.load(weights_file))
+            print(f"Loaded pretrained weights")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

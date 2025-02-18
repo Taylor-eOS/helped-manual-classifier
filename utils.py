@@ -62,10 +62,6 @@ def extract_page_geometric_features(doc, page_num):
         page_blocks.append(features)
     return process_drop_cap(page_blocks)
 
-def delete_if_exists(del_file):
-    if os.path.exists(del_file):
-        os.remove(del_file)
-
 # Feature calculation functions
 def calculate_height(y0, y1):
     return y1 - y0

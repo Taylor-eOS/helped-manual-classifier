@@ -28,7 +28,8 @@ class ManualClassifierGUI:
         self.page_buffer = []
         self.current_page_blocks = []
         self.global_indices = []
-        self.mlp_model = BlockClassifier()
+        self.model = BlockClassifier()
+        self.load_model_weights()
         self.processing_lock = threading.Lock()
         self.root = tk.Tk()
         self.root.title("PDF Block Classifier with MLP Help")
@@ -39,7 +40,6 @@ class ManualClassifierGUI:
         self.training_lock = False
         self.load_current_page()
         self.root.mainloop()
-        self.load_model_weights()
         self.pending_training_data = []
 
     def setup_ui(self):
@@ -96,10 +96,10 @@ class ManualClassifierGUI:
             features, labels = get_training_data()
             if features:
                 print(f"Training on {len(features)} blocks")
-                self.mlp_model = train_model(self.mlp_model, features, labels, epochs=EPOCHS, lr=LEARNING_RATE)
+                self.model = train_model(self.model, features, labels, epochs=EPOCHS, lr=LEARNING_RATE)
                 training_data.clear()
                 normalization_buffer.clear()
-            pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
+            pred_labels = predict_blocks(self.model, self.current_page_blocks)
             for local_idx, global_idx in enumerate(self.global_indices):
                 if self.block_classifications[global_idx] == '0':
                     self.block_classifications[global_idx] = pred_labels[local_idx]
@@ -182,7 +182,7 @@ class ManualClassifierGUI:
             self.set_current_label(letter_labels[key])
 
     def finish_classification(self):
-        torch.save(self.mlp_model.state_dict(), 'weights.pth')
+        torch.save(self.model.state_dict(), 'weights.pth')
         print("Model weights saved")
         messagebox.showinfo("Complete", "Classification saved to weights.pth")
         self.doc.close()
@@ -195,8 +195,8 @@ class ManualClassifierGUI:
     def load_model_weights(self):
         weights_file = "weights_pretrained.pth"
         if os.path.exists(weights_file):
-            self.mlp_model.load_state_dict(torch.load(weights_file))
-            print(f"Loaded pre-trained weights from {weights_file}")
+            self.model.load_state_dict(torch.load(weights_file))
+            print(f"Loaded pretrained weights")
 
 def main():
     file_name = input("Enter PDF file basename: ").strip()
