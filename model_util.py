@@ -13,6 +13,8 @@ from collections import deque
 from utils import calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap
 from gui_core import draw_blocks
 
+EPOCHS = 5
+LEARNING_RATE = 0.06
 I_VALUE = 1
 label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
@@ -117,7 +119,7 @@ def add_training_example(block, label, doc_width=612, doc_height=792):
     training_data.append((features, label_map[label]))
     normalization_buffer.append(features)
 
-def train_model(model, features, labels, epochs=1, lr=0.03):
+def train_model(model, features, labels, epochs=EPOCHS, lr=LEARNING_RATE):
     weights_file = "weights.pth"
     #if os.path.exists(weights_file):
     #    model.load_state_dict(torch.load(weights_file))

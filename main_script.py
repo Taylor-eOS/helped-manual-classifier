@@ -10,12 +10,11 @@ from collections import Counter
 from wordfreq import word_frequency
 import threading
 import torch
-from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, get_features, training_data, normalization_buffer, label_map
+from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, get_features, training_data, normalization_buffer, label_map, EPOCHS, LEARNING_RATE
 from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from embed import get_embedding
 
-save_weights = False #Turn this on in pretraining
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
 
 class ManualClassifierGUI:
@@ -54,7 +53,7 @@ class ManualClassifierGUI:
             btn = tk.Button(self.control_frame, text=text,command=lambda l=label: self.set_current_label(l))
             btn.grid(row=0, column=idx, padx=1)
             self.buttons.append(btn)
-        self.next_btn = tk.Button(self.control_frame, text="Next", command=self.next_page,bg="#4CAF50", fg="white")
+        self.next_btn = tk.Button(self.control_frame, text="Next", command=self.next_page,bg="#4CAF50", fg="black")
         self.next_btn.grid(row=0, column=5, padx=1)
         self.status_var = tk.StringVar()
         self.status_label = tk.Label(self.root, textvariable=self.status_var, bg="white")
@@ -97,7 +96,7 @@ class ManualClassifierGUI:
             features, labels = get_training_data()
             if features:
                 print(f"Training on {len(features)} blocks")
-                self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
+                self.mlp_model = train_model(self.mlp_model, features, labels, epochs=EPOCHS, lr=LEARNING_RATE)
                 training_data.clear()
                 normalization_buffer.clear()
             pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
@@ -183,10 +182,9 @@ class ManualClassifierGUI:
             self.set_current_label(letter_labels[key])
 
     def finish_classification(self):
-        if save_weights:
-            torch.save(self.mlp_model.state_dict(), 'model_weights.pth')
-            print("Model weights saved")
-        messagebox.showinfo("Complete", "Classification saved to output file")
+        torch.save(self.mlp_model.state_dict(), 'weights.pth')
+        print("Model weights saved")
+        messagebox.showinfo("Complete", "Classification saved to weights.pth")
         self.doc.close()
         self.root.quit()
 
@@ -195,13 +193,13 @@ class ManualClassifierGUI:
         self.root.destroy()
 
     def load_model_weights(self):
-        weights_file = "pretrained_weights.pth"
+        weights_file = "weights_pretrained.pth"
         if os.path.exists(weights_file):
             self.mlp_model.load_state_dict(torch.load(weights_file))
             print(f"Loaded pre-trained weights from {weights_file}")
 
 def main():
-    file_name = input("Enter PDF filename (without extension): ").strip()
+    file_name = input("Enter PDF file basename: ").strip()
     pdf_path = f"{file_name}.pdf"
     if not os.path.exists(pdf_path):
         print(f"Error: {pdf_path} not found")

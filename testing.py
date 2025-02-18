@@ -3,11 +3,11 @@ import fitz
 import torch
 import sys
 from collections import defaultdict
-from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, training_data, normalization_buffer
+from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, training_data, normalization_buffer, EPOCHS, LEARNING_RATE
 from utils import extract_page_geometric_features, process_drop_cap
+from main_script import
 
 print_predictions = True
-save_weights_testing = False
 
 class PDFEvaluator:
     def __init__(self, pdf_path, ground_truth_path):
@@ -33,10 +33,10 @@ class PDFEvaluator:
 
     def load_model_weights(self):
         try:
-            self.model.load_state_dict(torch.load('pretrained_weights.pth'))
+            self.model.load_state_dict(torch.load('weights_pretrained.pth'))
             print("Loaded existing weights")
         except FileNotFoundError:
-            print("Using fresh model weights")
+            print("Using fresh model weights. To load it, name your file weights_pretrained.pth")
 
     def evaluate(self):
         total_correct = 0
@@ -60,7 +60,7 @@ class PDFEvaluator:
                 if print_predictions:
                     #print(f"Page {self.current_page + 1}:")
                     for i, (true, pred) in enumerate(zip(page_true, page_pred)):
-                        print(f"Block {i}: {pred} - {true}")
+                        if False: print(f"Block {i}: {pred} - {true}")
             #Train on current page's ground truth by order
             for block, true_label in zip(blocks, gt_labels):
                 #add_training_example(block, retrogressive_label_map[true_label])
@@ -68,7 +68,7 @@ class PDFEvaluator:
             X, y = get_training_data()
             if X:
                 print(f"Training on {len(X)} blocks")
-                self.model = train_model(self.model, X, y, epochs=5, lr=0.05)
+                self.model = train_model(self.model, X, y, epochs=EPOCHS, lr=LEARNING_RATE)
                 #Clear training buffer for next page
                 training_data.clear()
                 normalization_buffer.clear()
@@ -79,8 +79,11 @@ class PDFEvaluator:
         return final_accuracy
 
 if __name__ == "__main__":
-    evaluator = PDFEvaluator("s.pdf", "ground_truth.json")
+    if len(sys.argv) != 2:
+        print("Usage: python script.py <basename>")
+        sys.exit(1)
+    name = sys.argv[1]
+    evaluator = PDFEvaluator(f"{name}.pdf", "ground_truth.json")
     final_acc = evaluator.evaluate()
-    if save_weights_testing: 
-        torch.save(evaluator.model.state_dict(), 'weights.pth')
+    if False: torch.save(evaluator.model.state_dict(), 'testing_weights.pth')
 

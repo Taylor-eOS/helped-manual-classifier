@@ -24,10 +24,10 @@ def draw_blocks(self):
         y0 = block['y0'] * self.zoom * self.scale
         x1 = block['x1'] * self.zoom * self.scale
         y1 = block['y1'] * self.zoom * self.scale
-        self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=2)
+        self.canvas.create_rectangle(x0, y0, x1, y1, outline=color, width=4)
 
 def get_block_color(global_idx):
-    colors = {'header': '#ff0000','body': '#00aaff','footer': '#0000ff','quote': '#ffff00','exclude': '#808080','0': 'black'}
+    colors = {'header': '#ff0000','body': '#00aaff','footer': 'DarkSeaGreen3','quote': 'gold','exclude': 'gray75','0': 'white'}
     return colors.get(global_idx, 'white')
 
 def update_button_highlight(buttons, current_label):
