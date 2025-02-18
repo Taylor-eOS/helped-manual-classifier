@@ -10,12 +10,13 @@ from collections import Counter
 from wordfreq import word_frequency
 import threading
 import torch
-from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data
+from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, get_features, training_data, normalization_buffer, label_map
 from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from embed import get_embedding
 
 save_weights = False #Turn this on in pretraining
+letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
 
 class ManualClassifierGUI:
     def __init__(self, pdf_path):
@@ -32,12 +33,15 @@ class ManualClassifierGUI:
         self.processing_lock = threading.Lock()
         self.root = tk.Tk()
         self.root.title("PDF Block Classifier with MLP Help")
+        self.current_label = 'body'
         self.setup_ui()
         self.process_page(self.current_page)
         self.schedule_next_page_processing(self.current_page + 1)
+        self.training_lock = False
         self.load_current_page()
         self.root.mainloop()
         self.load_model_weights()
+        self.pending_training_data = []
 
     def setup_ui(self):
         self.canvas = tk.Canvas(self.root, bg="white")
@@ -77,9 +81,6 @@ class ManualClassifierGUI:
             self.all_blocks[page_num] = page_blocks
             self.block_classifications.extend(['0'] * len(page_blocks))
 
-    def extract_page_geometric_features(self, page_num):
-        return extract_page_geometric_features(self.doc, page_num)
-
     def schedule_next_page_processing(self, next_page_num):
         if next_page_num >= self.total_pages:
             return
@@ -88,24 +89,23 @@ class ManualClassifierGUI:
                 return
         threading.Thread(target=self.process_page, args=(next_page_num,)).start()
 
-    def load_current_page(self):
-        return load_current_page(self)
-
     def update_model_and_predictions(self):
-        global training_data, normalization_buffer
-        features, labels = get_training_data()
-        if features:
-            self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
-            if 'training_data' in globals() and training_data:
+        if self.training_lock:
+            return
+        self.training_lock = True
+        try:
+            features, labels = get_training_data()
+            if features:
+                print(f"Training on {len(features)} blocks")
+                self.mlp_model = train_model(self.mlp_model, features, labels, epochs=5, lr=0.05)
                 training_data.clear()
                 normalization_buffer.clear()
-        pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
-        for local_idx, global_idx in enumerate(self.global_indices):
-            if self.block_classifications[global_idx] == '0':
-                self.block_classifications[global_idx] = pred_labels[local_idx]
-
-    def draw_blocks(self):
-        return draw_blocks(self)
+            pred_labels = predict_blocks(self.mlp_model, self.current_page_blocks)
+            for local_idx, global_idx in enumerate(self.global_indices):
+                if self.block_classifications[global_idx] == '0':
+                    self.block_classifications[global_idx] = pred_labels[local_idx]
+        finally:
+            self.training_lock = False
 
     def on_canvas_click(self, event):
         x = event.x / (self.zoom * self.scale)
@@ -115,8 +115,12 @@ class ManualClassifierGUI:
                 global_idx = block['global_idx']
                 self.block_classifications[global_idx] = self.current_label
                 add_training_example(block, self.current_label)
-                self.page_buffer.append({'text': block['text'],'label': self.current_label,'y0': block['y0'],'x0': block['x0'],'global_idx': global_idx})
-                self.update_model_and_predictions()
+                self.page_buffer.append({
+                    'text': block['text'],
+                    'label': self.current_label,
+                    'y0': block['y0'],
+                    'x0': block['x0'],
+                    'global_idx': global_idx})
                 self.draw_blocks()
                 self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
                 break
@@ -128,11 +132,19 @@ class ManualClassifierGUI:
             if label not in ['0']:
                 drop_to_file(block['text'], label, self.current_page)
         manual_global_indices = {b['global_idx'] for b in self.page_buffer}
+        page_training_data = []
         for block in self.current_page_blocks:
             global_idx = block['global_idx']
             label = self.block_classifications[global_idx]
             if global_idx not in manual_global_indices:
-                add_training_example(block, label)
+                features = get_features(block, doc_width=612, doc_height=792, dump=False)
+                page_training_data.append((features, label_map[label]))
+        if page_training_data:
+            with threading.Lock():
+                global training_data
+                training_data.extend(page_training_data)
+        #print(f"Current page: {self.current_page}")
+        self.update_model_and_predictions()
         self.page_buffer = []
         self.current_page += 1
         if self.current_page >= self.total_pages:
@@ -151,17 +163,24 @@ class ManualClassifierGUI:
     def update_button_highlight(self):
         update_button_highlight(self.buttons, self.current_label)
 
-    def on_key_press(self, event):
-        key = event.keysym.lower()
-        labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
-        if key in labels:
-            self.set_current_label(labels[key])
+    def extract_page_geometric_features(self, page_num):
+        return extract_page_geometric_features(self.doc, page_num)
+
+    def load_current_page(self):
+        return load_current_page(self)
+
+    def draw_blocks(self):
+        return draw_blocks(self)
 
     def on_key_press(self, event):
         key = event.keysym.lower()
-        labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
-        if key in labels:
-            self.set_current_label(labels[key])
+        if key in letter_labels:
+            self.set_current_label(letter_labels[key])
+
+    def on_key_press(self, event):
+        key = event.keysym.lower()
+        if key in letter_labels:
+            self.set_current_label(letter_labels[key])
 
     def finish_classification(self):
         if save_weights:
@@ -176,7 +195,7 @@ class ManualClassifierGUI:
         self.root.destroy()
 
     def load_model_weights(self):
-        weights_file = "weights.pth"
+        weights_file = "pretrained_weights.pth"
         if os.path.exists(weights_file):
             self.mlp_model.load_state_dict(torch.load(weights_file))
             print(f"Loaded pre-trained weights from {weights_file}")
@@ -188,9 +207,11 @@ def main():
         print(f"Error: {pdf_path} not found")
         return
     open("output.json", "w").close()
+    open("ground_truth.json", "w").close()
     open("debug.csv", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 
 if __name__ == "__main__":
     main()
+

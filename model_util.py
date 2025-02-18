@@ -14,6 +14,7 @@ from utils import calculate_punctuation_proportion, calculate_average_font_size,
 from gui_core import draw_blocks
 
 I_VALUE = 1
+label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
 def get_next_block_index():
     global I_VALUE
@@ -111,16 +112,16 @@ def get_training_data():
     return list(features), list(labels)
 
 def add_training_example(block, label, doc_width=612, doc_height=792):
-    label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
+    global training_data, normalization_buffer
     features = get_features(block, doc_width, doc_height, True)
     training_data.append((features, label_map[label]))
     normalization_buffer.append(features)
 
 def train_model(model, features, labels, epochs=1, lr=0.03):
     weights_file = "weights.pth"
-    """if os.path.exists(weights_file):
-        model.load_state_dict(torch.load(weights_file))
-        print(f"Loaded weights from {weights_file}")"""
+    #if os.path.exists(weights_file):
+    #    model.load_state_dict(torch.load(weights_file))
+    #    print(f"Loaded weights from {weights_file}")
     if not features:
         return model
     X_train = torch.tensor(features, dtype=torch.float32)
@@ -138,8 +139,8 @@ def train_model(model, features, labels, epochs=1, lr=0.03):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-    """torch.save(model.state_dict(), weights_file)
-    print(f"Saved weights to {weights_file}")"""
+    #torch.save(model.state_dict(), weights_file)
+    #print(f"Saved weights to {weights_file}")
     return model
 
 def predict_blocks(model, blocks, doc_width=612, doc_height=792):
