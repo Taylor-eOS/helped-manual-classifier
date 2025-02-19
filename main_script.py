@@ -13,7 +13,7 @@ import torch
 from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, get_features, training_data, normalization_buffer, label_map, EPOCHS, LEARNING_RATE
 from utils import drop_to_file, calculate_letter_count, calculate_punctuation_proportion, calculate_average_font_size, calculate_num_lines, calculate_average_words_per_sentence, calculate_starts_with_number, calculate_capitalization_proportion, get_word_commonality, calculate_entropy, process_drop_cap, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
-from embed import get_embedding
+#from embed import get_embedding
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
 
@@ -32,7 +32,7 @@ class ManualClassifierGUI:
         self.load_model_weights()
         self.processing_lock = threading.Lock()
         self.root = tk.Tk()
-        self.root.title("PDF Block Classifier with MLP Help")
+        self.root.title("PDF Block Classifier with Prediction")
         self.current_label = 'body'
         self.setup_ui()
         self.process_page(self.current_page)
@@ -162,9 +162,6 @@ class ManualClassifierGUI:
     def update_button_highlight(self):
         update_button_highlight(self.buttons, self.current_label)
 
-    def extract_page_geometric_features(self, page_num):
-        return extract_page_geometric_features(self.doc, page_num)
-
     def load_current_page(self):
         return load_current_page(self)
 
@@ -205,7 +202,7 @@ def main():
         print(f"Error: {pdf_path} not found")
         return
     open("output.json", "w").close()
-    open("ground_truth.json", "w").close()
+    #open("ground_truth.json", "w").close()
     open("debug.csv", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
