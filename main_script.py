@@ -170,18 +170,36 @@ class ManualClassifierGUI:
 
     def on_key_press(self, event):
         key = event.keysym.lower()
-        if key in letter_labels:
-            self.set_current_label(letter_labels[key])
-
-    def on_key_press(self, event):
-        key = event.keysym.lower()
-        if key in letter_labels:
-            self.set_current_label(letter_labels[key])
+        key_to_idx = {'h':0,'b':1,'f':2,'q':3,'e':4}
+        if key not in key_to_idx:
+            return
+        import gui_core
+        result = gui_core.classify_next_block(self, key_to_idx[key])
+        if isinstance(result, tuple):
+            block, label = result
+            add_training_example(block, label)
+        if result == "PAGE_DONE":
+            sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
+            for block in sorted_blocks:
+                lbl = self.block_classifications[block['global_idx']]
+                if lbl != '0':
+                    drop_to_file(block['text'], lbl, self.current_page)
+            self.update_model_and_predictions()
+            self.page_buffer = []
+            self.current_page += 1
+            if self.current_page < self.total_pages:
+                with self.processing_lock:
+                    if self.all_blocks[self.current_page] is None:
+                        self.process_page(self.current_page)
+                self.schedule_next_page_processing(self.current_page + 1)
+                self.load_current_page()
+            else:
+                self.finish_classification()
 
     def finish_classification(self):
         torch.save(self.model.state_dict(), 'weights.pth')
         print("Model weights saved")
-        messagebox.showinfo("Complete", "Classification saved to weights.pth")
+        messagebox.showinfo("Complete", "Classification saved")
         self.doc.close()
         self.root.quit()
 
@@ -202,7 +220,7 @@ def main():
         print(f"Error: {pdf_path} not found")
         return
     open("output.json", "w").close()
-    #open("ground_truth.json", "w").close()
+    if False: open("ground_truth.json", "w").close()
     open("debug.csv", "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")

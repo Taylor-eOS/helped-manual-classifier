@@ -1,6 +1,6 @@
 import fitz
-from PIL import Image, ImageTk
 import tkinter as tk
+from PIL import Image, ImageTk
 
 def load_page_image(doc, page_num, zoom, root):
     page = doc.load_page(page_num)
@@ -45,6 +45,8 @@ def load_current_page(self):
             self.process_page(self.current_page)
         self.current_page_blocks = self.all_blocks[self.current_page]
         self.global_indices = [b['global_idx'] for b in self.current_page_blocks]
+        self._sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
+        self._key_block_idx = 0
         page = self.doc.load_page(self.current_page)
         mat = fitz.Matrix(self.zoom, self.zoom)
         pix = page.get_pixmap(matrix=mat)
@@ -61,4 +63,24 @@ def load_current_page(self):
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
         self.update_model_and_predictions()
         self.draw_blocks()
+
+def classify_next_block(self, label_idx):
+    if not hasattr(self, "_sorted_blocks"):
+        return None
+    if self._key_block_idx >= len(self._sorted_blocks):
+        return "PAGE_DONE"
+    block = self._sorted_blocks[self._key_block_idx]
+    label = ['header','body','footer','quote','exclude'][label_idx]
+    self.block_classifications[block['global_idx']] = label
+    self.page_buffer.append({
+        'text': block['text'],
+        'label': label,
+        'y0': block['y0'],
+        'x0': block['x0'],
+        'global_idx': block['global_idx']})
+    self.draw_blocks()
+    self._key_block_idx += 1
+    if self._key_block_idx >= len(self._sorted_blocks):
+        return "PAGE_DONE"
+    return block, label
 
