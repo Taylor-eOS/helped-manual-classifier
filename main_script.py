@@ -104,11 +104,10 @@ class ManualClassifierGUI(FeatureUtils):
         self.training_lock = True
         try:
             batch = []
-            for global_idx, label in enumerate(self.block_classifications):
-                if label != '0':
-                    block = self.all_blocks[global_idx]
-                    feat = self.get_global_features(block, 612, 792, True)
-                    batch.append((feat, label_map[label]))
+            for item in self.page_buffer:
+                block = self.all_blocks[item['global_idx']]
+                feat = self.get_global_features(block, 612, 792, True)
+                batch.append((feat, label_map[item['label']]))
             if batch:
                 if any(lbl == '0' for _, lbl in batch):
                     raise ValueError("Attempting to train on label '0' (unlabeled). Check labeling logic.")
