@@ -95,7 +95,7 @@ def get_features(block, doc_width=612, doc_height=792, dump=False):
         block['squared_entropy']]
     feature_names = ['odd_even', 'x0', 'y0', 'width', 'height', 'position', 'letter_count', 'font_size', 'relative_font_size', 'num_lines', 'punctuation_proportion', 'average_words_per_sentence', 'starts_with_number', 'capitalization_proportion', 'average_word_commonality', 'squared_entropy']
     if dump:
-        with open("debug.csv", "a") as f:
+        with open(settings.feature_data_file, "a") as f:
             if f.tell() == 0:
                 f.write("Block," + ",".join(feature_names) + "\n")
             f.write(f"{get_next_block_index()}," + ",".join(f"{feature:.5f}" for feature in original_features) + "\n")

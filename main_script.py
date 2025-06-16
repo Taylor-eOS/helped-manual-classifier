@@ -270,7 +270,7 @@ def main():
         return
     open("output.json", "w").close()
     if False: open("ground_truth.json", "w").close()
-    open("debug.csv", "w").close()
+    open(settings.feature_data_file, "w").close()
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 
