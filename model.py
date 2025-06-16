@@ -13,7 +13,6 @@ from collections import deque
 import settings
 
 i_value = 1
-label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
 def get_next_block_index():
     global i_value

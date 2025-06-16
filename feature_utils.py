@@ -15,7 +15,6 @@ class FeatureUtils:
         self.global_stats = {
             'font_size_mean': m(fs), 'font_size_std': s(fs),
             'width_mean': m(ws),     'width_std': s(ws),
-
             'height_mean': m(hs),    'height_std': s(hs),
             'letter_count_mean': m(ls), 'letter_count_std': s(ls),
             'position_mean': m(ps),  'position_std': s(ps),

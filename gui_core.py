@@ -67,7 +67,11 @@ def load_current_page(self):
     self.canvas.config(width=new_size[0], height=new_size[1])
     self.canvas.delete("all")
     self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
-    self.update_model_and_predictions()
+    pred_labels = self.predict_current_page()
+    for local_idx, global_idx in enumerate(self.global_indices):
+        if self.block_classifications[global_idx] == '0':
+            self.block_classifications[global_idx] = pred_labels[local_idx]
+    self.model_suggestions = self.block_classifications.copy()
     self.draw_blocks()
 
 def classify_next_block(self, label_idx):

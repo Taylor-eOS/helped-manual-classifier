@@ -10,13 +10,14 @@ import threading
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model import BlockClassifier, get_features, training_data, label_map
+from model import BlockClassifier, get_features, training_data
 from utils import drop_to_file, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from feature_utils import FeatureUtils
 import settings
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
+label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
 class ManualClassifierGUI(FeatureUtils):
     def __init__(self, pdf_path):
@@ -102,11 +103,23 @@ class ManualClassifierGUI(FeatureUtils):
             return
         self.training_lock = True
         try:
-            features, labels = self.get_local_training_data()
-            if features:
+            batch = []
+            for global_idx, label in enumerate(self.block_classifications):
+                if label != '0':
+                    block = self.all_blocks[global_idx]
+                    feat = self.get_global_features(block, 612, 792, True)
+                    batch.append((feat, label_map[label]))
+            if batch:
+                if any(lbl == '0' for _, lbl in batch):
+                    raise ValueError("Attempting to train on label '0' (unlabeled). Check labeling logic.")
+                features, labels = zip(*batch)
                 print(f"Training on {len(features)} blocks")
-                self.model = self.train_model(epochs=settings.EPOCHS, lr=settings.LEARNING_RATE)
-                self.training_data.clear()
+                self.model = self.train_model(
+                    epochs=settings.EPOCHS,
+                    lr=settings.LEARNING_RATE,
+                    features=list(features),
+                    labels=list(labels)
+                )
             pred_labels = self.predict_current_page()
             for local_idx, global_idx in enumerate(self.global_indices):
                 if self.block_classifications[global_idx] == '0':
@@ -115,8 +128,7 @@ class ManualClassifierGUI(FeatureUtils):
         finally:
             self.training_lock = False
 
-    def train_model(self, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE):
-        features, labels = self.get_local_training_data()
+    def train_model(self, features, labels, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE):
         if not features:
             return self.model
         X_train = torch.tensor(features, dtype=torch.float32)
@@ -174,14 +186,14 @@ class ManualClassifierGUI(FeatureUtils):
         sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
         for block in sorted_blocks:
             label = self.block_classifications[block['global_idx']]
-            if label not in ['0']:
+            if label != '0':
                 drop_to_file(block['text'], label, self.current_page)
         manual_global_indices = {b['global_idx'] for b in self.page_buffer}
         page_training_data = []
         for block in self.current_page_blocks:
             global_idx = block['global_idx']
             label = self.block_classifications[global_idx]
-            if global_idx not in manual_global_indices:
+            if global_idx not in manual_global_indices and label != '0':
                 features = get_features(block, doc_width=612, doc_height=792, dump=False)
                 page_training_data.append((features, label_map[label]))
         if page_training_data:
