@@ -1,16 +1,13 @@
-import os
+import os, json, string
 import fitz
-import string
 import numpy as np
 from math import log2
 from collections import Counter
 from wordfreq import word_frequency
-import json
-
-debug = False
+import settings
 
 def drop_to_file(block_text, block_type, block_page_number):
-    if debug: print(type(block_text), type(block_type), type(block_page_number), sep='\n', end='\n')
+    if settings.debug: print(type(block_text), type(block_type), type(block_page_number), sep='\n', end='\n')
     label_mapping = {"header": "h1", "body": "p", "footer": "footer", "quote": "blockquote", "exclude": "exclude"}
     entry = {
         "label": label_mapping.get(block_type, "unknown"),
@@ -18,12 +15,13 @@ def drop_to_file(block_text, block_type, block_page_number):
         "text": block_text}
     with open("output.json", "a", encoding='utf-8') as file:
         file.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    #entry['label'] = block_type
-    #if block_type == "exclude":
-    #    entry['text'] = ""
-    #with open("ground_truth.json", "a", encoding='utf-8') as file:
-    #    file.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    if debug: print(entry)
+    if settings.ground_truth_logging:
+            entry['label'] = block_type
+            if block_type == "exclude":
+                entry['text'] = ""
+            with open("ground_truth.json", "a", encoding='utf-8') as file:
+                file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    if settings.debug: print(entry)
 
 def extract_blocks(pdf_path):
     blocks = []
@@ -54,7 +52,7 @@ def extract_page_geometric_features(doc, page_num):
         page_blocks.append(features)
     return process_drop_cap(page_blocks)
 
-# Feature calculation functions
+###Feature calculation functions
 def calculate_height(y0, y1):
     return y1 - y0
 

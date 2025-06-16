@@ -1,13 +1,10 @@
-import os
-import json
+import os, sys, json
 import fitz
 import torch
-import sys
 from collections import defaultdict
-from model_util import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, training_data, normalization_buffer, EPOCHS, LEARNING_RATE
+from model import BlockClassifier, train_model, predict_blocks, add_training_example, get_training_data, training_data, normalization_buffer
 from utils import extract_page_geometric_features, process_drop_cap
-
-print_predictions = True
+import settings
 
 class PDFEvaluator:
     def __init__(self, pdf_path, ground_truth_path):
@@ -16,14 +13,14 @@ class PDFEvaluator:
         self.ground_truth = self.load_ground_truth(ground_truth_path)
         self.model = BlockClassifier()
         self.load_model_weights()
-        self.current_page = 0  #0-based index
+        self.current_page = 0
 
     def load_ground_truth(self, gt_path):
         truth = defaultdict(list)
         with open(gt_path, 'r') as f:
             for line in f:
                 entry = json.loads(line)
-                pnum = entry['page'] - 1  #Convert to 0-based
+                pnum = entry['page'] - 1
                 truth[pnum].append(entry['label'])
         return truth
 
@@ -50,7 +47,7 @@ class PDFEvaluator:
                 total_samples += len(page_true)
                 accuracy = total_correct / total_samples if total_samples else 0
                 print(f"Page {self.current_page + 1}: Accuracy {accuracy:.2%}")
-                if print_predictions:
+                if settings.print_predictions:
                     #print(f"Page {self.current_page + 1}:")
                     for i, (true, pred) in enumerate(zip(page_true, page_pred)):
                         if False: print(f"Block {i}: {pred} - {true}")
@@ -61,7 +58,7 @@ class PDFEvaluator:
             X, y = get_training_data()
             if X:
                 print(f"Training on {len(X)} blocks")
-                self.model = train_model(self.model, X, y, epochs=EPOCHS, lr=LEARNING_RATE)
+                self.model = train_model(self.model, X, y, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE)
                 #Clear training buffer for next page
                 training_data.clear()
                 normalization_buffer.clear()
