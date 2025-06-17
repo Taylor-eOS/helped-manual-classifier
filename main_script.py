@@ -83,6 +83,29 @@ class ManualClassifierGUI(FeatureUtils):
         self.compute_global_stats()
         return all_blocks
 
+    def train_model(self, features, labels, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE):
+        if not features:
+            return self.model
+        X_train = torch.tensor(features, dtype=torch.float32)
+        y_train = torch.tensor(labels, dtype=torch.long)
+        optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
+        criterion = nn.CrossEntropyLoss()
+        dataset = torch.utils.data.TensorDataset(X_train, y_train)
+        loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
+        self.model.train()
+        for epoch in range(epochs):
+            epoch_loss = 0
+            for batch_X, batch_y in loader:
+                optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                optimizer.step()
+                epoch_loss += loss.item()
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
+        return self.model
+
     def add_training_example(self, block, label, doc_width=612, doc_height=792):
         features = self.get_global_features(block, doc_width, doc_height, True)
         self.training_data.append((features, label_map[label]))
@@ -127,29 +150,6 @@ class ManualClassifierGUI(FeatureUtils):
         finally:
             self.training_lock = False
 
-    def train_model(self, features, labels, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE):
-        if not features:
-            return self.model
-        X_train = torch.tensor(features, dtype=torch.float32)
-        y_train = torch.tensor(labels, dtype=torch.long)
-        optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
-        criterion = nn.CrossEntropyLoss()
-        dataset = torch.utils.data.TensorDataset(X_train, y_train)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
-        self.model.train()
-        for epoch in range(epochs):
-            epoch_loss = 0
-            for batch_X, batch_y in loader:
-                optimizer.zero_grad()
-                outputs = self.model(batch_X)
-                loss = criterion(outputs, batch_y)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                optimizer.step()
-                epoch_loss += loss.item()
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
-        return self.model
-
     def predict_current_page(self):
         if not self.current_page_blocks:
             return []
@@ -183,23 +183,28 @@ class ManualClassifierGUI(FeatureUtils):
 
     def next_page(self):
         sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
+        #dump every labeled block to file
         for block in sorted_blocks:
-            label = self.block_classifications[block['global_idx']]
-            if label != '0':
-                drop_to_file(block['text'], label, self.current_page)
-        manual_global_indices = {b['global_idx'] for b in self.page_buffer}
-        page_training_data = []
+            lbl = self.block_classifications[block['global_idx']]
+            if lbl != '0':
+                drop_to_file(block['text'], lbl, self.current_page)
+        #record which ones were overitten manually
+        manual_global_indices = {item['global_idx'] for item in self.page_buffer}
+        #treat model‑suggested labels you didn’t click as “accepted” examples
         for block in self.current_page_blocks:
-            global_idx = block['global_idx']
-            label = self.block_classifications[global_idx]
-            if global_idx not in manual_global_indices and label != '0':
-                features = get_features(block, doc_width=612, doc_height=792, dump=False)
-                page_training_data.append((features, label_map[label]))
-        if page_training_data:
-            with threading.Lock():
-                global training_data
-                training_data.extend(page_training_data)
+            gid = block['global_idx']
+            lbl = self.block_classifications[gid]
+            if gid not in manual_global_indices and lbl != '0':
+                self.page_buffer.append({
+                    'text': block['text'],
+                    'label': lbl,
+                    'y0': block['y0'],
+                    'x0': block['x0'],
+                    'global_idx': gid
+                })
+        #now train on everything in page_buffer (manual + accepted)
         self.update_model_and_predictions()
+        #clear buffer and move on
         self.page_buffer = []
         self.current_page += 1
         if self.current_page >= self.total_pages:
