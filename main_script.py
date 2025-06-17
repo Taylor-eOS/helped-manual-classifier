@@ -165,6 +165,32 @@ class ManualClassifierGUI(FeatureUtils):
         return [label_names[p] for p in predictions.tolist()]
 
     def on_canvas_click(self, event):
+        x=event.x/(self.zoom*self.scale)
+        y=event.y/(self.zoom*self.scale)
+        labels=['header','body','footer','quote','exclude']
+        for block in self.current_page_blocks:
+            if block['x0']<=x<=block['x1'] and block['y0']<=y<=block['y1']:
+                gid=block['global_idx']
+                curr=self.block_classifications[gid]
+                try:
+                    idx=labels.index(curr)
+                except ValueError:
+                    idx=-1
+                next_label=labels[(idx+1)%len(labels)]
+                self.block_classifications[gid]=next_label
+                self.manual_overrides.add(gid)
+                self.add_training_example(block, next_label)
+                self.page_buffer.append({
+                    'text':block['text'],
+                    'label':next_label,
+                    'y0':block['y0'],
+                    'x0':block['x0'],
+                    'global_idx':gid})
+                self.draw_blocks()
+                self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
+                break
+
+    def on_canvas_click_old(self, event):
         x = event.x / (self.zoom * self.scale)
         y = event.y / (self.zoom * self.scale)
         for block in self.current_page_blocks:
