@@ -64,6 +64,8 @@ class ManualClassifierGUI(FeatureUtils):
         self.status_label = tk.Label(self.root, textvariable=self.status_var, bg="white")
         self.status_label.pack(pady=4, fill=tk.X)
         self.root.bind('<KeyPress>', self.on_key_press)
+        self.root.bind('<n>', lambda event: self.next_page())
+        self.root.bind('<space>', lambda event: self.next_page())
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.zoom = 2
         self.scale = 1.0
@@ -275,6 +277,7 @@ def main():
     open("output.json", "w").close()
     if False: open("ground_truth.json", "w").close()
     open(settings.feature_data_file, "w").close()
+    print("Extracting the entire file will take a moment...")
     ManualClassifierGUI(pdf_path)
     print("Classification complete")
 
