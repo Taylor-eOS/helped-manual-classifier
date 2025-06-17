@@ -230,7 +230,7 @@ class ManualClassifierGUI(FeatureUtils):
                     'x0': block['x0'],
                     'global_idx': gid
                 })
-        #now train on everything in page_buffer (manual + accepted)
+        #train on everything in page_buffer (manual + accepted)
         self.update_model_and_predictions()
         #clear buffer and move on
         self.page_buffer = []
@@ -289,9 +289,8 @@ class ManualClassifierGUI(FeatureUtils):
         self.root.destroy()
 
     def load_model_weights(self):
-        weights_file = "weights_pretrained.pth"
-        if os.path.exists(weights_file):
-            self.model.load_state_dict(torch.load(weights_file))
+        if os.path.exists(settings.pretrained_file):
+            self.model.load_state_dict(torch.load(settings.pretrained_file))
             print(f"Loaded pretrained weights")
 
 def main():
