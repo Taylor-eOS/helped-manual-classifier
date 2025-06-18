@@ -20,7 +20,7 @@ letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
 label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
 class ManualClassifierGUI(FeatureUtils):
-    def __init__(self, pdf_path):
+    def __init__(self, pdf_path=None, launch_gui=True):
         self.pdf_path = pdf_path
         self.doc = fitz.open(pdf_path)
         self.total_pages = self.doc.page_count
@@ -45,6 +45,8 @@ class ManualClassifierGUI(FeatureUtils):
         self.training_lock = False
         self.load_current_page()
         self.pending_training_data = []
+        if not launch_gui:
+            return
         self.root.mainloop()
 
     def setup_ui(self):
@@ -85,7 +87,7 @@ class ManualClassifierGUI(FeatureUtils):
         self.compute_global_stats()
         return all_blocks
 
-    def train_model(self, features, labels, epochs=settings.EPOCHS, lr=settings.LEARNING_RATE):
+    def train_model(self, features, labels, print_loss=True, epochs=settings.epochs, lr=settings.learning_rate):
         if not features:
             return self.model
         X_train = torch.tensor(features, dtype=torch.float32)
@@ -105,7 +107,8 @@ class ManualClassifierGUI(FeatureUtils):
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 optimizer.step()
                 epoch_loss += loss.item()
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
+            if print_loss:
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
         return self.model
 
     def add_training_example(self, block, label, doc_width=612, doc_height=792):
@@ -139,8 +142,8 @@ class ManualClassifierGUI(FeatureUtils):
                 features, labels = zip(*batch)
                 print(f"Training on {len(features)} blocks")
                 self.model = self.train_model(
-                    epochs=settings.EPOCHS,
-                    lr=settings.LEARNING_RATE,
+                    epochs=settings.epochs,
+                    lr=settings.learning_rate,
                     features=list(features),
                     labels=list(labels)
                 )

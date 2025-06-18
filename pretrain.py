@@ -3,9 +3,9 @@ import fitz
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
 from model import BlockClassifier
 from utils import extract_page_geometric_features
-import numpy as np
 import settings
 
 def pre_compute_global_stats(blocks, total_pages):

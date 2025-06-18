@@ -1,6 +1,6 @@
 debug = False
-EPOCHS = 10
-LEARNING_RATE = 0.001
+epochs = 8
+learning_rate = 0.0008
 print_predictions = True
 load_weights_file = False
 ground_truth_logging = False
@@ -12,4 +12,6 @@ pretrain_mask_ratio = 0.1
 pretrain_epochs = 25
 pretrain_learning_rate = 0.0007
 device = "cpu"
+print_predicted_and_real_labels = False
+save_testing_weights = False
 
