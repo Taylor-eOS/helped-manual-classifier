@@ -5,6 +5,7 @@ from collections import defaultdict
 from main_script import ManualClassifierGUI
 from model import BlockClassifier
 from utils import extract_page_geometric_features, process_drop_cap
+from embed import get_embedding, apply_document_pca
 import settings
 
 class PDFEvaluator:
@@ -44,61 +45,76 @@ class PDFEvaluator:
         for block in blocks:
             block['page_num'] = page_num
         self.model.eval()
-        X = torch.tensor([self.gui.get_global_features(b, doc_width, doc_height, False) for b in blocks], dtype=torch.float32)
+        X = torch.tensor([self.gui.get_global_features(b, doc_width, doc_height, settings.dump_testing_feature_data) for b in blocks], dtype=torch.float32)
         with torch.no_grad():
             logits = self.model(X)
             _, preds = torch.max(logits, 1)
         label_map = ['h1', 'p', 'footer', 'blockquote', 'exclude']
         return [label_map[p] for p in preds.tolist()]
 
+    def _compile_all_blocks(self):
+        all_blocks=[];all_texts=[]
+        for p in range(self.total_pages):
+            page_blks=self.process_page(p)
+            for b in page_blks:b['page_num']=p
+            all_blocks.extend(page_blks);all_texts.extend([b['text'] for b in page_blks])
+        return all_blocks,all_texts
+
+    def _attach_embeddings(self,blocks,texts):
+        if texts:
+            raw_emb=get_embedding(texts);emb=apply_document_pca(raw_emb,settings.embedding_components)
+        else:
+            emb=np.zeros((0,settings.embedding_components))
+        for i,b in enumerate(blocks):
+            for j in range(settings.embedding_components):
+                b[f'embed_{j}']=emb[i][j] if j<emb.shape[1] else 0.0
+
+    def _page_slices(self,blocks):
+        idx=0;page_index={}
+        for p in range(self.total_pages):
+            cnt=len(self.process_page(p))
+            page_index[p]=blocks[idx:idx+cnt];idx+=cnt
+        return page_index
+
     def evaluate(self):
-        total_correct = 0
-        total_samples = 0
-        testing_label_map = {'h1': 'header', 'p': 'body', 'footer': 'footer', 'blockquote': 'quote', 'exclude': 'exclude'}
-        while self.current_page < self.total_pages:
-            blocks = self.process_page(self.current_page)
-            gt_labels = self.ground_truth.get(self.current_page, [])
-            pred_labels = self._predict_blocks(blocks, self.current_page)
-            page_true = gt_labels[:len(blocks)]
-            page_pred = pred_labels[:len(gt_labels)]
+        all_blocks,all_texts=self._compile_all_blocks()
+        self._attach_embeddings(all_blocks,all_texts)
+        page_index=self._page_slices(all_blocks)
+        total_correct=0;total_samples=0
+        testing_label_map={'h1':'header','p':'body','footer':'footer','blockquote':'quote','exclude':'exclude'}
+        while self.current_page<self.total_pages:
+            blocks=page_index[self.current_page]
+            gt=self.ground_truth.get(self.current_page,[])
+            preds=self._predict_blocks(blocks,self.current_page)
+            page_true=gt[:len(blocks)];page_pred=preds[:len(gt)]
             if page_true:
-                correct = sum(t == p for t, p in zip(page_true, page_pred))
-                page_accuracy = correct / len(page_true)
-                total_correct += correct
-                total_samples += len(page_true)
-                cumulative_accuracy = total_correct / total_samples
-                print(f"Page {self.current_page + 1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
-                if settings.print_mistaken_predictions:
-                    for i, (true, pred) in enumerate(zip(page_true, page_pred)):
-                        if pred != true:
-                            if settings.print_predictions:
-                                print(f"Block {i}: {pred} - {true}")
-                            with open('mistaken_predictions.txt', 'a') as f:
-                                f.write(f"Page {self.current_page + 1}, block {i}: {pred} - {true}\n")
-            for block, true_label in zip(blocks, gt_labels):
-                self.gui.add_training_example(block, testing_label_map[true_label])
+                correct=sum(t==p for t,p in zip(page_true,page_pred))
+                total_correct+=correct;total_samples+=len(page_true)
+                pa=correct/len(page_true);ca=total_correct/total_samples
+                print(f"Page {self.current_page+1}: Page accuracy {pa:.2%}, cumulative accuracy {ca:.2%}")
+            for b,true in zip(blocks,gt):
+                self.gui.add_training_example(b,testing_label_map[true])
             if self.gui.training_data:
-                features, labels = zip(*self.gui.training_data)
-                self.gui.training_data.clear()
-                self.model = self.gui.train_model(features, labels, False)
-            self.current_page += 1
+                feats,labels=zip(*self.gui.training_data);self.gui.training_data.clear()
+                self.model=self.gui.train_model(list(feats),list(labels),False)
+            self.current_page+=1
         self.doc.close()
-        final_accuracy = total_correct / total_samples if total_samples else 0
-        print(f"\nFinal Accuracy: {final_accuracy:.2%}")
-        return final_accuracy
+        final_acc=(total_correct/total_samples) if total_samples else 0
+        print(f"\nFinal Accuracy: {final_acc:.2%}")
+        return final_acc
 
 def main():
+    open(settings.feature_data_file, "w").close()
     if len(sys.argv) != 2:
         print("Usage: add input pdf file basename as only argument")
         sys.exit(1)
     name = sys.argv[1]
     evaluator = PDFEvaluator(f"{name}.pdf", "ground_truth.json")
     final_acc = evaluator.evaluate()
-    if settings.save_testing_weights: torch.save(evaluator.model.state_dict(), 'testing_weights.pth')
 
 if __name__ == "__main__":
     if settings.print_mistaken_predictions:
         with open('mistaken_predictions.txt', 'w') as f:
-            f.write(f"Page, block: predicted - true\n")
+            f.write(f"Page, block: pred - true (text_snippet)\n")
     main()
 

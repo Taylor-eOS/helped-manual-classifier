@@ -41,7 +41,7 @@ class ResidualBlock(nn.Module):
         return self.relu(out)
 
 class BlockClassifier(nn.Module):
-    def __init__(self, input_features=20):
+    def __init__(self, input_features=settings.input_feature_length):
         super().__init__()
         self.initial_fc = nn.Linear(input_features, 64)
         self.relu = nn.ReLU()
@@ -60,45 +60,4 @@ class BlockClassifier(nn.Module):
 training_data = []
 normalization_buffer = deque(maxlen=50)
 epsilon = 1e-6
-
-class DocumentProcessor:
-    def __init__(self, doc):
-        self.doc = doc
-        self.all_blocks = []
-        self.global_stats = {}
-        self.training_data = []
-        self.model = BlockClassifier()
-
-def compute_norm_params(buffer):
-    arr = np.array(buffer)
-    means = np.mean(arr, axis=0)
-    stds = np.std(arr, axis=0)
-    return means, stds
-
-def get_features(block, doc_width = 612, doc_height = 792, dump = False): #features_here
-    base = []
-    for name in settings.BASE_FEATURES:
-        value = block[name]
-        scale = settings.SCALES.get(name)
-        if scale == 'doc_width':
-            value /= doc_width
-        elif scale == 'doc_height':
-            value /= doc_height
-        elif isinstance(scale, (int, float)):
-            value /= scale
-        base.append(value)
-    if self.global_stats:
-        p = percentile(block['font_size'], self.all_blocks)
-        z = (block['font_size'] - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
-        pg = block['page_num'] / self.global_stats['total_pages']
-        c = self.is_consistent_across_pages(block)
-        base += [p, z, pg, c]
-    if dump:
-        suffix_names = ['font_size_pct', 'font_size_z', 'page_frac', 'consistency']
-        names = settings.BASE_FEATURES + suffix_names
-        with open(settings.feature_data_file, 'a') as f:
-            if f.tell() == 0:
-                f.write("Block," + ",".join(names) + "\n")
-            f.write(f"{get_next_block_index()}," + ",".join(f"{v:.5f}" for v in base) + "\n")
-    return base
 

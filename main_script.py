@@ -10,10 +10,11 @@ import threading
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model import BlockClassifier, get_features, training_data
+from model import BlockClassifier, training_data
 from utils import drop_to_file, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from feature_utils import FeatureUtils
+from embed import get_embedding, apply_document_pca
 import settings
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
@@ -33,7 +34,7 @@ class ManualClassifierGUI(FeatureUtils):
         self.page_buffer = []
         self.current_page_blocks = []
         self.global_indices = []
-        self.model = BlockClassifier(input_features=20)
+        self.model = BlockClassifier(input_features=settings.input_feature_length)
         self.training_data = []
         if settings.load_pretraining_weights:
             self.load_model_weights()
@@ -76,13 +77,21 @@ class ManualClassifierGUI(FeatureUtils):
 
     def extract_all_blocks(self):
         all_blocks = []
+        all_texts = []
         for page_num in range(self.total_pages):
             page_blocks = extract_page_geometric_features(self.doc, page_num)
-            starting_global_idx = len(all_blocks)
-            for i, block in enumerate(page_blocks):
-                block['page_num'] = page_num
-                block['global_idx'] = starting_global_idx + i
             all_blocks.extend(page_blocks)
+            all_texts.extend([block['text'] for block in page_blocks])
+        if all_texts:
+            raw_embeddings = get_embedding(all_texts)
+            embeddings = apply_document_pca(raw_embeddings, settings.embedding_components)
+        else:
+            embeddings = np.zeros((0, settings.embedding_components))
+        for i, block in enumerate(all_blocks):
+            for j in range(settings.embedding_components):
+                block[f'embed_{j}'] = embeddings[i][j] if j < embeddings.shape[1] else 0.0
+        for i, block in enumerate(all_blocks):
+            block['global_idx'] = i
         self.all_blocks = all_blocks
         self.block_classifications = ['0'] * len(all_blocks)
         self.compute_global_stats()
@@ -146,8 +155,7 @@ class ManualClassifierGUI(FeatureUtils):
                     epochs=settings.epochs,
                     lr=settings.learning_rate,
                     features=list(features),
-                    labels=list(labels)
-                )
+                    labels=list(labels))
             pred_labels = self.predict_current_page()
             for local_idx, global_idx in enumerate(self.global_indices):
                 if self.block_classifications[global_idx] == '0':
@@ -215,14 +223,11 @@ class ManualClassifierGUI(FeatureUtils):
 
     def next_page(self):
         sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
-        #dump every labeled block to file
         for block in sorted_blocks:
             lbl = self.block_classifications[block['global_idx']]
             if lbl != '0':
                 drop_to_file(block['text'], lbl, self.current_page)
-        #record which ones were overitten manually
         manual_global_indices = {item['global_idx'] for item in self.page_buffer}
-        #treat model‑suggested labels you didn’t click as “accepted” examples
         for block in self.current_page_blocks:
             gid = block['global_idx']
             lbl = self.block_classifications[gid]
@@ -232,11 +237,8 @@ class ManualClassifierGUI(FeatureUtils):
                     'label': lbl,
                     'y0': block['y0'],
                     'x0': block['x0'],
-                    'global_idx': gid
-                })
-        #train on everything in page_buffer (manual + accepted)
+                    'global_idx': gid})
         self.update_model_and_predictions()
-        #clear buffer and move on
         self.page_buffer = []
         self.current_page += 1
         if self.current_page >= self.total_pages:
