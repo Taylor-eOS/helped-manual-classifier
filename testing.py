@@ -53,55 +53,88 @@ class PDFEvaluator:
         return [label_map[p] for p in preds.tolist()]
 
     def _compile_all_blocks(self):
-        all_blocks=[];all_texts=[]
+        all_blocks = []
+        all_texts = []
         for p in range(self.total_pages):
-            page_blks=self.process_page(p)
-            for b in page_blks:b['page_num']=p
-            all_blocks.extend(page_blks);all_texts.extend([b['text'] for b in page_blks])
-        return all_blocks,all_texts
+            page_blks = self.process_page(p)
+            for b in page_blks:
+                b['page_num'] = p
+            all_blocks.extend(page_blks)
+            all_texts.extend([b['text'] for b in page_blks])
+        return all_blocks, all_texts
 
-    def _attach_embeddings(self,blocks,texts):
+    def _attach_embeddings(self, blocks, texts):
         if texts:
-            raw_emb=get_embedding(texts);emb=apply_document_pca(raw_emb,settings.embedding_components)
+            raw_emb = get_embedding(texts)
+            emb = apply_document_pca(raw_emb, settings.embedding_components)
         else:
-            emb=np.zeros((0,settings.embedding_components))
-        for i,b in enumerate(blocks):
+            emb = np.zeros((0, settings.embedding_components))
+        for i, b in enumerate(blocks):
             for j in range(settings.embedding_components):
-                b[f'embed_{j}']=emb[i][j] if j<emb.shape[1] else 0.0
+                b[f'embed_{j}'] = emb[i][j] if j < emb.shape[1] else 0.0
 
-    def _page_slices(self,blocks):
-        idx=0;page_index={}
+    def _page_slices(self, blocks):
+        idx = 0
+        page_index = {}
         for p in range(self.total_pages):
-            cnt=len(self.process_page(p))
-            page_index[p]=blocks[idx:idx+cnt];idx+=cnt
+            cnt = len(self.process_page(p))
+            page_index[p] = blocks[idx : idx + cnt]
+            idx += cnt
         return page_index
 
     def evaluate(self):
-        all_blocks,all_texts=self._compile_all_blocks()
-        self._attach_embeddings(all_blocks,all_texts)
-        page_index=self._page_slices(all_blocks)
-        total_correct=0;total_samples=0
-        testing_label_map={'h1':'header','p':'body','footer':'footer','blockquote':'quote','exclude':'exclude'}
-        while self.current_page<self.total_pages:
-            blocks=page_index[self.current_page]
-            gt=self.ground_truth.get(self.current_page,[])
-            preds=self._predict_blocks(blocks,self.current_page)
-            page_true=gt[:len(blocks)];page_pred=preds[:len(gt)]
-            if page_true:
-                correct=sum(t==p for t,p in zip(page_true,page_pred))
-                total_correct+=correct;total_samples+=len(page_true)
-                pa=correct/len(page_true);ca=total_correct/total_samples
-                print(f"Page {self.current_page+1}: Page accuracy {pa:.2%}, cumulative accuracy {ca:.2%}")
-            for b,true in zip(blocks,gt):
-                self.gui.add_training_example(b,testing_label_map[true])
+        all_blocks, all_texts = self._compile_all_blocks()
+        self._attach_embeddings(all_blocks, all_texts)
+        page_index = self._page_slices(all_blocks)
+        total_correct = 0
+        total_samples = 0
+        error_counts = defaultdict(int)
+        testing_label_map = {'h1': 'header', 'p': 'body', 'footer': 'footer', 'blockquote': 'quote', 'exclude': 'exclude'}
+        while self.current_page < self.total_pages:
+            blocks = page_index[self.current_page]
+            gt = self.ground_truth.get(self.current_page, [])
+            preds = self._predict_blocks(blocks, self.current_page)
+            page_true = gt[:len(blocks)]
+            page_pred = preds[:len(gt)]
+            if page_true and page_pred:
+                limit = min(len(page_true), len(page_pred), len(blocks))
+                correct = sum(page_true[i] == page_pred[i] for i in range(limit))
+                total_correct += correct
+                total_samples += limit
+                page_accuracy = correct / limit
+                cumulative_accuracy = total_correct / total_samples
+                print(f"Page {self.current_page + 1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
+                if settings.print_mistaken_predictions:
+                    self.write_mistaken_predictions(self.current_page + 1, page_true, page_pred, blocks, limit, error_counts)
+            for block, true_label in zip(blocks, gt):
+                self.gui.add_training_example(block, testing_label_map[true_label])
             if self.gui.training_data:
-                feats,labels=zip(*self.gui.training_data);self.gui.training_data.clear()
-                self.model=self.gui.train_model(list(feats),list(labels),False)
-            self.current_page+=1
+                feats, labels = zip(*self.gui.training_data)
+                self.gui.training_data.clear()
+                self.model = self.gui.train_model(list(feats), list(labels), False)
+            self.current_page += 1
         self.doc.close()
-        final_acc=(total_correct/total_samples) if total_samples else 0
+        final_acc = total_correct / total_samples if total_samples else 0
         print(f"\nFinal Accuracy: {final_acc:.2%}")
+        if settings.print_mistaken_predictions:
+            with open('mistaken_predictions.txt', 'a') as f:
+                f.write("\nMistake counts (pred-true):\n")
+                for (pred, true), count in sorted(error_counts.items(), key=lambda x: -x[1]):
+                    f.write(f"{pred}-{true}: {count}\n")
         return final_acc
+
+    def write_mistaken_predictions(self, page_number, page_true, page_pred, blocks, limit, error_counts):
+        for i in range(limit):
+            true = page_true[i]
+            pred = page_pred[i]
+            if pred != true:
+                snippet = blocks[i].get('text', '')[:30].replace('\n', '\\n')
+                msg = f"Page {page_number}, block {i}: {pred}-{true}   ({snippet})"
+                if settings.print_predictions:
+                    print(msg)
+                with open('mistaken_predictions.txt', 'a') as f:
+                    f.write(msg + '\n')
+                error_counts[(pred, true)] += 1
 
 def main():
     open(settings.feature_data_file, "w").close()
@@ -114,7 +147,6 @@ def main():
 
 if __name__ == "__main__":
     if settings.print_mistaken_predictions:
-        with open('mistaken_predictions.txt', 'w') as f:
-            f.write(f"Page, block: pred - true (text_snippet)\n")
+        open('mistaken_predictions.txt', "w").close()
     main()
 

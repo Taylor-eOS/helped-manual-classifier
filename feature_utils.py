@@ -48,7 +48,6 @@ class FeatureUtils:
             glob = [0.0, 0.0, 0.0, 0.0]
         embeds = [block.get(f'embed_{i}', 0.0) for i in range(settings.embedding_components)]
         feats = orig + embeds + glob
-        print(embeds)
         if dump:
             idx = block.get('global_idx', '??')
             derived = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
