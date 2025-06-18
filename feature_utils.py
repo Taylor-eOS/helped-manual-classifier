@@ -2,7 +2,7 @@ import numpy as np
 import settings
 
 class FeatureUtils:
-    def compute_global_stats(self):
+    def compute_global_stats(self): #features_here
         if not self.all_blocks:
             return
         fs = [b['font_size'] for b in self.all_blocks]
@@ -37,31 +37,19 @@ class FeatureUtils:
         total_other = max(self.global_stats.get('total_pages',1) - 1, 1)
         return len(other_pages) / total_other
 
-    def get_global_features(self, block, doc_width=612, doc_height=792, dump=False):
-        if settings.print_features:
-            print("Received block:")
-            for k, v in block.items():
-                print(f"  {k}: {v}")
-        orig = [
-            block['odd_even'],
-            block['x0']/doc_width,
-            block['y0']/doc_height,
-            block['width']/doc_width,
-            block['height']/doc_height,
-            block['position'],
-            block['letter_count']/100,
-            block['font_size']/24,
-            block['relative_font_size'],
-            block['num_lines']/10,
-            block['punctuation_proportion'],
-            block['average_words_per_sentence']/10,
-            block['starts_with_number'],
-            block['capitalization_proportion'],
-            block['average_word_commonality'],
-            block['squared_entropy']]
+    def get_global_features(self, block, doc_width = 612, doc_height = 792, dump = False):
+        orig = []
+        for name in settings.BASE_FEATURES:
+            v = block[name]
+            scale = settings.SCALES.get(name)
+            if isinstance(scale, str):
+                v /= locals()[scale]
+            elif scale:
+                v /= scale
+            orig.append(v)
         if self.global_stats:
             p = self.get_percentile(block['font_size'], [b['font_size'] for b in self.all_blocks])
-            z = (block['font_size'] - self.global_stats['font_size_mean'])/(self.global_stats['font_size_std'] + 1e-6)
+            z = (block['font_size'] - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
             pg = block['page_num'] / self.global_stats['total_pages']
             c = self.is_consistent_across_pages(block)
             glob = [p, z, pg, c]
@@ -72,20 +60,14 @@ class FeatureUtils:
             self.dump_block_features(orig, glob)
         return feats
 
-    def dump_block_features(self, orig, glob):
+    def dump_block_features(self, orig, glob): #features_here
         if not hasattr(self, '_dumped_signatures'):
             self._dumped_signatures = set()
         sig = tuple(orig)
         if sig in self._dumped_signatures:
             return
         feats = orig + glob
-        names = [
-            'odd_even','x0_norm','y0_norm','width_norm','height_norm',
-            'position','letter_count_norm','font_size_norm','relative_font_size',
-            'num_lines_norm','punctuation_proportion','avg_words_per_sentence_norm',
-            'starts_with_number','capitalization_proportion','avg_word_commonality',
-            'squared_entropy','font_size_percentile','font_size_zscore',
-            'page_position','cross_page_consistency']
+        names = settings.BASE_FEATURES + ['font_size_percentile', 'font_size_zscore', 'page_fraction', 'cross_page_consistency']
         try:
             with open(settings.feature_data_file, "a") as f:
                 if f.tell() == 0:

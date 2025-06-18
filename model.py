@@ -75,40 +75,30 @@ def compute_norm_params(buffer):
     stds = np.std(arr, axis=0)
     return means, stds
 
-def get_features(block, doc_width=612, doc_height=792, dump=False):
-    original_features = [
-        block['odd_even'],
-        block['x0'],
-        block['y0'],
-        block['width'],
-        block['height'],
-        block['position'],
-        block['letter_count'],
-        block['font_size'],
-        block['relative_font_size'],
-        block['num_lines'],
-        block['punctuation_proportion'],
-        block['average_words_per_sentence'],
-        block['starts_with_number'],
-        block['capitalization_proportion'],
-        block['average_word_commonality'],
-        block['squared_entropy']]
-    feature_names = ['odd_even', 'x0', 'y0', 'width', 'height', 'position', 'letter_count', 'font_size', 'relative_font_size', 'num_lines', 'punctuation_proportion', 'average_words_per_sentence', 'starts_with_number', 'capitalization_proportion', 'average_word_commonality', 'squared_entropy']
+def get_features(block, doc_width = 612, doc_height = 792, dump = False): #features_here
+    base = []
+    for name in settings.BASE_FEATURES:
+        value = block[name]
+        scale = settings.SCALES.get(name)
+        if scale == 'doc_width':
+            value /= doc_width
+        elif scale == 'doc_height':
+            value /= doc_height
+        elif isinstance(scale, (int, float)):
+            value /= scale
+        base.append(value)
+    if self.global_stats:
+        p = percentile(block['font_size'], self.all_blocks)
+        z = (block['font_size'] - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
+        pg = block['page_num'] / self.global_stats['total_pages']
+        c = self.is_consistent_across_pages(block)
+        base += [p, z, pg, c]
     if dump:
-        with open(settings.feature_data_file, "a") as f:
+        suffix_names = ['font_size_pct', 'font_size_z', 'page_frac', 'consistency']
+        names = settings.BASE_FEATURES + suffix_names
+        with open(settings.feature_data_file, 'a') as f:
             if f.tell() == 0:
-                f.write("Block," + ",".join(feature_names) + "\n")
-            f.write(f"{get_next_block_index()}," + ",".join(f"{feature:.5f}" for feature in original_features) + "\n")
-    raw_features = original_features.copy()
-    raw_features[3] /= doc_width
-    raw_features[4] /= doc_height
-    raw_features[6] /= 100
-    raw_features[7] /= 24
-    raw_features[9] /= 10
-    raw_features[11] /= 10
-    if len(normalization_buffer) > 0:
-        means, stds = compute_norm_params(normalization_buffer)
-        norm_features = [(raw - mean) / (std + epsilon) for raw, mean, std in zip(raw_features, means, stds)]
-        return norm_features
-    return raw_features
+                f.write("Block," + ",".join(names) + "\n")
+            f.write(f"{get_next_block_index()}," + ",".join(f"{v:.5f}" for v in base) + "\n")
+    return base
 

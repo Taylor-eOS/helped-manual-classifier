@@ -35,7 +35,8 @@ class ManualClassifierGUI(FeatureUtils):
         self.global_indices = []
         self.model = BlockClassifier(input_features=20)
         self.training_data = []
-        self.load_model_weights()
+        if settings.load_pretraining_weights:
+            self.load_model_weights()
         self.processing_lock = threading.Lock()
         self.root = tk.Tk()
         self.root.title("PDF Block Classifier with Prediction")

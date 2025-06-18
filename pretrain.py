@@ -10,43 +10,31 @@ import settings
 
 def pre_compute_global_stats(blocks, total_pages):
     fs = [b['font_size'] for b in blocks]
-    ws = [b['width'] for b in blocks]
-    hs = [b['height'] for b in blocks]
-    ls = [b['letter_count'] for b in blocks]
-    ps = [b['position'] for b in blocks]
-    return {
-        'font_size_mean': np.mean(fs), 'font_size_std': np.std(fs),
-        'width_mean': np.mean(ws), 'width_std': np.std(ws),
-        'height_mean': np.mean(hs), 'height_std': np.std(hs),
-        'letter_count_mean': np.mean(ls), 'letter_count_std': np.std(ls),
-        'position_mean': np.mean(ps), 'position_std': np.std(ps),
-        'total_blocks': len(blocks), 'total_pages': total_pages}
+    stats = {
+        'blocks': blocks,
+        'blocks_count': len(blocks),
+        'total_pages': total_pages,
+        'font_size_mean': np.mean(fs),
+        'font_size_std': np.std(fs)
+    }
+    return stats
 
-def pre_get_global_features(block, stats, doc_w = 612, doc_h = 792):
-    orig = [
-        block['odd_even'],
-        block['x0'] / doc_w,
-        block['y0'] / doc_h,
-        block['width'] / doc_w,
-        block['height'] / doc_h,
-        block['position'],
-        block['letter_count'] / 100,
-        block['font_size'] / 24,
-        block['relative_font_size'],
-        block['num_lines'] / 10,
-        block['punctuation_proportion'],
-        block['average_words_per_sentence'] / 10,
-        block['starts_with_number'],
-        block['capitalization_proportion'],
-        block['average_word_commonality'],
-        block['squared_entropy']]
-    pct = sum(1 for v in [b['font_size'] for b in stats['blocks']] if v <= block['font_size']) / stats['blocks_count']
+def pre_get_global_features(block, stats, doc_w = 612, doc_h = 792): #features_here
+    orig = []
+    for name in settings.BASE_FEATURES:
+        value = block[name]
+        scale = settings.SCALES.get(name)
+        if scale == 'doc_width':
+            value /= doc_w
+        elif scale == 'doc_height':
+            value /= doc_h
+        elif isinstance(scale, (int, float)):
+            value /= scale
+        orig.append(value)
+    pct = sum(1 for b in stats['blocks'] if b['font_size'] <= block['font_size']) / stats['blocks_count']
     z = (block['font_size'] - stats['font_size_mean']) / (stats['font_size_std'] + 1e-6)
     pg = block['page_num'] / stats['total_pages']
-    cc = sum(1 for b in stats['blocks']
-             if b['page_num'] != block['page_num'] and
-             abs(b['y0'] - block['y0']) < 50 and
-             abs(b['font_size'] - block['font_size']) < 2) / (stats['total_pages'] - 1 + 1e-6)
+    cc = sum(1 for b in stats['blocks'] if b['page_num'] != block['page_num'] and abs(b['y0'] - block['y0']) < 50 and abs(b['font_size'] - block['font_size']) < 2) / (stats['total_pages'] - 1 + 1e-6)
     return orig + [pct, z, pg, cc]
 
 if __name__ == "__main__":

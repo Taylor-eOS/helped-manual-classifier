@@ -15,7 +15,8 @@ class PDFEvaluator:
         self.model = BlockClassifier()
         self.gui = ManualClassifierGUI(pdf_path, launch_gui=False)
         self.gui.model = self.model
-        self.load_model_weights()
+        if settings.load_pretraining_weights:
+            self.load_model_weights()
         self.current_page = 0
 
     def load_ground_truth(self, gt_path):
@@ -67,9 +68,13 @@ class PDFEvaluator:
                 total_samples += len(page_true)
                 cumulative_accuracy = total_correct / total_samples
                 print(f"Page {self.current_page + 1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
-                if settings.print_predictions:
+                if settings.print_mistaken_predictions:
                     for i, (true, pred) in enumerate(zip(page_true, page_pred)):
-                        if settings.print_predicted_and_real_labels: print(f"Block {i}: {pred} - {true}")
+                        if pred != true:
+                            if settings.print_predictions:
+                                print(f"Block {i}: {pred} - {true}")
+                            with open('mistaken_predictions.txt', 'a') as f:
+                                f.write(f"Page {self.current_page + 1}, block {i}: {pred} - {true}\n")
             for block, true_label in zip(blocks, gt_labels):
                 self.gui.add_training_example(block, testing_label_map[true_label])
             if self.gui.training_data:
@@ -92,5 +97,8 @@ def main():
     if settings.save_testing_weights: torch.save(evaluator.model.state_dict(), 'testing_weights.pth')
 
 if __name__ == "__main__":
+    if settings.print_mistaken_predictions:
+        with open('mistaken_predictions.txt', 'w') as f:
+            f.write(f"Page, block: predicted - true\n")
     main()
 

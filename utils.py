@@ -39,17 +39,33 @@ def extract_blocks(pdf_path):
     doc.close()
     return blocks
 
-def extract_page_geometric_features(doc, page_num):
+def extract_page_geometric_features(doc, page_num): #features_here
     page = doc.load_page(page_num)
     raw_blocks = page.get_text("blocks")
     page_blocks = []
     for idx, block in enumerate(raw_blocks):
-        if len(block) < 6 or not block[4].strip():
-            continue
+        if len(block) < 6 or not block[4].strip(): continue
         x0, y0, x1, y1, text = block[:5]
         text = text.strip()
-        features = {'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1, 'width': x1 - x0, 'height': y1 - y0, 'position': y0 / page.rect.height, 'letter_count': calculate_letter_count(text), 'font_size': calculate_average_font_size(page, idx), 'num_lines': calculate_num_lines(page, idx), 'punctuation_proportion': calculate_punctuation_proportion(text), 'average_words_per_sentence': calculate_average_words_per_sentence(text), 'starts_with_number': calculate_starts_with_number(text), 'capitalization_proportion': calculate_capitalization_proportion(text), 'average_word_commonality': get_word_commonality(text), 'squared_entropy': calculate_entropy(text)**2, 'page': page_num, 'odd_even': 1 if page_num % 2 == 0 else 0, 'text': text, 'type': '0'}
-        page_blocks.append(features)
+        page_blocks.append({
+            'x0': x0, 'y0': y0,
+            'x1': x1, 'y1': y1,
+            'width': x1 - x0, 'height': y1 - y0,
+            'position': y0 / page.rect.height,
+            'letter_count': calculate_letter_count(text),
+            'font_size': calculate_average_font_size(page, idx),
+            'relative_font_size': None,
+            'num_lines': calculate_num_lines(page, idx),
+            'punctuation_proportion': calculate_punctuation_proportion(text),
+            'average_words_per_sentence': calculate_average_words_per_sentence(text),
+            'starts_with_number': calculate_starts_with_number(text),
+            'capitalization_proportion': calculate_capitalization_proportion(text),
+            'average_word_commonality': get_word_commonality(text),
+            'squared_entropy': calculate_entropy(text)**2,
+            'page_num': page_num,
+            'odd_even': 1 if page_num % 2 == 0 else 0,
+            'text': text, 'type': '0'
+        })
     return process_drop_cap(page_blocks)
 
 ###Feature calculation functions
