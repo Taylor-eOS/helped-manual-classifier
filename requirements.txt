@@ -4,3 +4,4 @@ spacy
 numpy
 wordfreq
 torch
+sentence_transformers
