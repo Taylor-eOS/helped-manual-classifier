@@ -1,8 +1,9 @@
 ### **PDF Block Classifier with Machine Learning Assistance**
 
-This project is a GUI-based tool for classifying text blocks in PDF documents into predefined categories such as headers, body text (`<p>`), footers, quotes, and excluded content. It combines manual annotation with machine learning to streamline the classification process.
-The tool is designed to assist users in organizing and extracting the text from PDF documents, for instance for conversion into a reflowable format.
-This was mostly a learning project, and the code is relatively crude and messy.
+This project is a GUI-based tool for classifying text blocks in PDF documents into predefined categories such as headers, body text (`<p>`), footers, quotes, and excluded content. It combines manual annotation with machine learning to streamline the classification process.<br>
+The tool is designed to assist users in organizing and extracting the text from PDF documents, for instance for conversion into a reflowable format.<br>
+This was a learning project that gradually extended on itself, and the code is very messy.<br>
+Classification works smoothly now. I ran through a 600 page book in a few minutes.
 
 #### **Key Features**
 1. **Interactive GUI**: A Tkinter interface allows users to visually inspect and classify text blocks on PDF pages.
@@ -25,15 +26,11 @@ This was mostly a learning project, and the code is relatively crude and messy.
 - **Feature Engineering**: The tool computes a wide range of features for each text block, including geometric, textual, and linguistic properties.
 - **Incremental Learning**: The model is trained incrementally as users annotate blocks, allowing it to adapt to the specific characteristics of the document being processed.
 
-#### **Getting Started**
-1. Clone the repository or download the files `main_script`, `model_util`, `utils`, and `gui_core`.
-2. Install the required dependencies via the `requirements.txt` file.
+#### **Usage**
+1. Clone the repository or download the `py` files.
+2. Create an environment and install the dependencies via the `requirements.txt` file.
 3. Place your input PDF file in the same folder.
-4. Run `main_script` and provide the basename the PDF file.
+4. Run `main_script.py` and provide the basename the PDF file.
 
 #### **Testing**
 The script `testing.py` is used to run all data in the file `ground_truth.json` and compute an accuracy value, for quick model evaluation.
-
-#### **Future Enhancements (wishlist)**
-- Adding an embedding of text meaning as a feature (requires extracting entire document up-front)
-- Relational features like other block counts on the same page
