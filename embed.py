@@ -1,39 +1,33 @@
-import threading
+import os, threading
 import numpy as np
-from sklearn.decomposition import PCA
-from transformers import AutoTokenizer, AutoModel
 import torch
+from transformers import AutoTokenizer, AutoModel
+from sklearn.decomposition import PCA, TruncatedSVD
 import settings
 
 _model_lock = threading.Lock()
 _model = None
 _tokenizer = None
 
-def _mean_pooling(model_output, attention_mask):
-    token_embeddings = model_output.last_hidden_state
-    mask = attention_mask.unsqueeze(-1).float()
-    summed = torch.sum(token_embeddings * mask, dim=1)
-    counts = torch.clamp(mask.sum(dim=1), min=1e-9)
-    return summed / counts
-
 def _load_components(model_name="sentence-transformers/all-MiniLM-L6-v2"):
     print("Loading embedding model")
     global _model, _tokenizer
     with _model_lock:
         if _model is None or _tokenizer is None:
-            _tokenizer = AutoTokenizer.from_pretrained(model_name)
-            _model = AutoModel.from_pretrained(model_name)
+            cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
+            _tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
+            _model = AutoModel.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
     return _tokenizer, _model
 
 def get_embedding(texts, batch_size=32):
     if isinstance(texts, str):
         texts = [texts]
     if not texts:
-        return []
+        return np.zeros((0, settings.embedding_components))
     tokenizer, model = _load_components()
     device = settings.device
     model.to(device)
-    all_embeddings = []
+    all_vecs = []
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
         batch = [t[:settings.truncate_embedding_input] for t in batch]
@@ -41,18 +35,22 @@ def get_embedding(texts, batch_size=32):
         enc = {k: v.to(device) for k, v in enc.items()}
         with torch.no_grad():
             out = model(**enc)
-        pooled = _mean_pooling(out, enc["attention_mask"])
-        normalized = torch.nn.functional.normalize(pooled, p=2, dim=1)
-        all_embeddings.append(normalized.cpu().numpy())
-    raw = np.vstack(all_embeddings)
-    reduced = apply_document_pca(raw, settings.embedding_components)
-    return raw
+        hs = out.last_hidden_state
+        cls = hs[:, 0]
+        scores = torch.einsum('bth,bh->bt', hs, cls)
+        weights = torch.softmax(scores, dim=1).unsqueeze(-1)
+        attn_pooled = (hs * weights).sum(dim=1)
+        normed = torch.nn.functional.normalize(attn_pooled, p=2, dim=1)
+        all_vecs.append(normed.cpu().numpy())
+    raw = np.vstack(all_vecs)
+    svd = TruncatedSVD(n_components=settings.embedding_components)
+    return svd.fit_transform(raw)
 
 def apply_document_pca(raw_embeddings, n_components_desired):
     if len(raw_embeddings) == 0:
         return np.zeros((0, n_components_desired))
     n_components = min(n_components_desired, raw_embeddings.shape[0])
-    pca = PCA(n_components=n_components, whiten=True)
+    pca = PCA(n_components = n_components, whiten = True)
     transformed = pca.fit_transform(raw_embeddings)
     if transformed.shape[1] < n_components_desired:
         padding = np.zeros((len(raw_embeddings), n_components_desired - n_components))

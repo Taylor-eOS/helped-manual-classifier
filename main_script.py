@@ -106,6 +106,9 @@ class ManualClassifierGUI(FeatureUtils):
         criterion = nn.CrossEntropyLoss()
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
+        if settings.debug_input_shape:
+            print(X_train.shape)
+            print(settings.input_feature_length)
         self.model.train()
         for epoch in range(epochs):
             epoch_loss = 0
@@ -119,6 +122,12 @@ class ManualClassifierGUI(FeatureUtils):
                 epoch_loss += loss.item()
             if print_loss:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
+        if settings.debug_model_weight_usage:
+            with torch.no_grad():
+                weights = self.model.initial_fc.weight.cpu().numpy()
+                mean_abs_weights = np.mean(np.abs(weights), axis=0)
+                for i, w in enumerate(mean_abs_weights):
+                    print(f"Feature {i}: {w:.6f}")
         return self.model
 
     def add_training_example(self, block, label, doc_width=612, doc_height=792):
@@ -151,11 +160,7 @@ class ManualClassifierGUI(FeatureUtils):
                     raise ValueError("Attempting to train on label '0' (unlabeled). Check labeling logic.")
                 features, labels = zip(*batch)
                 print(f"Training on {len(features)} blocks")
-                self.model = self.train_model(
-                    epochs=settings.epochs,
-                    lr=settings.learning_rate,
-                    features=list(features),
-                    labels=list(labels))
+                self.model = self.train_model(epochs=settings.epochs, lr=settings.learning_rate, features=list(features), labels=list(labels))
             pred_labels = self.predict_current_page()
             for local_idx, global_idx in enumerate(self.global_indices):
                 if self.block_classifications[global_idx] == '0':

@@ -89,38 +89,43 @@ class PDFEvaluator:
         total_correct = 0
         total_samples = 0
         error_counts = defaultdict(int)
-        testing_label_map = {'h1': 'header', 'p': 'body', 'footer': 'footer', 'blockquote': 'quote', 'exclude': 'exclude'}
+        true_counts = defaultdict(int)
+        testing_label_map = {'h1': 'header', 'p': 'body', 'footer':'footer', 'blockquote':'quote', 'exclude':'exclude'}
         while self.current_page < self.total_pages:
             blocks = page_index[self.current_page]
             gt = self.ground_truth.get(self.current_page, [])
             preds = self._predict_blocks(blocks, self.current_page)
             page_true = gt[:len(blocks)]
             page_pred = preds[:len(gt)]
-            if page_true and page_pred:
-                limit = min(len(page_true), len(page_pred), len(blocks))
+            limit = min(len(page_true), len(page_pred), len(blocks))
+            if limit>0:
                 correct = sum(page_true[i] == page_pred[i] for i in range(limit))
                 total_correct += correct
                 total_samples += limit
-                page_accuracy = correct / limit
-                cumulative_accuracy = total_correct / total_samples
-                print(f"Page {self.current_page + 1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
+                for i in range(limit):
+                    true_counts[page_true[i]] += 1
+                page_accuracy = correct/limit
+                cumulative_accuracy = total_correct/total_samples
+                print(f"Page {self.current_page+1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
                 if settings.print_mistaken_predictions:
-                    self.write_mistaken_predictions(self.current_page + 1, page_true, page_pred, blocks, limit, error_counts)
+                    self.write_mistaken_predictions(self.current_page+1, page_true, page_pred, blocks, limit, error_counts)
             for block, true_label in zip(blocks, gt):
-                self.gui.add_training_example(block, testing_label_map[true_label])
+                self.gui.add_training_example(block,testing_label_map[true_label])
             if self.gui.training_data:
                 feats, labels = zip(*self.gui.training_data)
                 self.gui.training_data.clear()
                 self.model = self.gui.train_model(list(feats), list(labels), False)
             self.current_page += 1
         self.doc.close()
-        final_acc = total_correct / total_samples if total_samples else 0
+        final_acc = total_correct/total_samples if total_samples else 0
         print(f"\nFinal Accuracy: {final_acc:.2%}")
         if settings.print_mistaken_predictions:
             with open('mistaken_predictions.txt', 'a') as f:
-                f.write("\nMistake counts (pred-true):\n")
-                for (pred, true), count in sorted(error_counts.items(), key=lambda x: -x[1]):
-                    f.write(f"{pred}-{true}: {count}\n")
+                f.write("\nMistake counts:\n")
+                for (pred, true), cnt in sorted(error_counts.items(), key = lambda x:-x[1]):
+                    total = true_counts[true]
+                    prop = cnt / total
+                    f.write(f"{true}-{pred}: {cnt}/{total} ({cnt/total*100:.0f}%)\n")
         return final_acc
 
     def write_mistaken_predictions(self, page_number, page_true, page_pred, blocks, limit, error_counts):

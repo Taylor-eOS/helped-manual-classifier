@@ -47,12 +47,12 @@ class FeatureUtils:
         else:
             glob = [0.0, 0.0, 0.0, 0.0]
         embeds = [block.get(f'embed_{i}', 0.0) for i in range(settings.embedding_components)]
-        feats = orig + embeds + glob
+        feats = orig + glob + embeds
         if dump:
             idx = block.get('global_idx', '??')
             derived = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
             embed_names = [f'embed_{i}' for i in range(settings.embedding_components)]
-            feature_names = settings.BASE_FEATURES + embed_names + derived
+            feature_names = settings.BASE_FEATURES + derived + embed_names
             if settings.debug_get_global_features:
                 print(f"Debug block {idx}:")
                 for name, val in zip(feature_names, feats):

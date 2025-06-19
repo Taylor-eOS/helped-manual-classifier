@@ -21,4 +21,6 @@ truncate_embedding_input = 100
 input_feature_length = len(BASE_FEATURES) + 4 + embedding_components
 debug_get_global_features = False
 dump_testing_feature_data = False
+debug_input_shape = False
+debug_model_weight_usage = False
 
