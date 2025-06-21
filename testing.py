@@ -30,10 +30,9 @@ class PDFEvaluator:
         return truth
 
     def load_model_weights(self):
-        weights_file = settings.pretrained_file
-        if os.path.exists(weights_file):
-            self.model.load_state_dict(torch.load(weights_file))
-            print(f"Loaded pretrained weights")
+        if os.path.exists(settings.pretrained_file):
+            self.model.load_state_dict(torch.load(settings.pretrained_file))
+            print(f"Re-loaded pretrained weights")
 
     def process_page(self, page_num):
         blocks = extract_page_geometric_features(self.doc, page_num)
@@ -65,6 +64,7 @@ class PDFEvaluator:
 
     def _attach_embeddings(self, blocks, texts):
         if texts:
+            print("Creating embeddings")
             raw_emb = get_embedding(texts)
             emb = apply_document_pca(raw_emb, settings.embedding_components)
         else:
@@ -111,10 +111,10 @@ class PDFEvaluator:
                     self.write_mistaken_predictions(self.current_page+1, page_true, page_pred, blocks, limit, error_counts)
             for block, true_label in zip(blocks, gt):
                 self.gui.add_training_example(block,testing_label_map[true_label])
-            if self.gui.training_data:
-                feats, labels = zip(*self.gui.training_data)
-                self.gui.training_data.clear()
-                self.model = self.gui.train_model(list(feats), list(labels), False)
+            self.gui.schedule_retrainer()
+            #optionally pump a few ticks:
+            for _ in range(self.gui.page_retrain_limit + self.gui.replay_retrain_limit):
+                self.gui.retrain_tick()
             self.current_page += 1
         self.doc.close()
         final_acc = total_correct/total_samples if total_samples else 0
@@ -126,6 +126,7 @@ class PDFEvaluator:
                     total = true_counts[true]
                     prop = cnt / total
                     f.write(f"{true}-{pred}: {cnt}/{total} ({cnt/total*100:.0f}%)\n")
+        torch.save(self.model.state_dict(), 'weights.pt')
         return final_acc
 
     def write_mistaken_predictions(self, page_number, page_true, page_pred, blocks, limit, error_counts):

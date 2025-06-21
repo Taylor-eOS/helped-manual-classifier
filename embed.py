@@ -50,7 +50,7 @@ def apply_document_pca(raw_embeddings, n_components_desired):
     if len(raw_embeddings) == 0:
         return np.zeros((0, n_components_desired))
     n_components = min(n_components_desired, raw_embeddings.shape[0])
-    pca = PCA(n_components = n_components, whiten = True)
+    pca = PCA(n_components=n_components, whiten=True)
     transformed = pca.fit_transform(raw_embeddings)
     if transformed.shape[1] < n_components_desired:
         padding = np.zeros((len(raw_embeddings), n_components_desired - n_components))
