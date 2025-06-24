@@ -32,7 +32,7 @@ class PDFEvaluator:
     def load_model_weights(self):
         if os.path.exists(settings.pretrained_file):
             self.model.load_state_dict(torch.load(settings.pretrained_file))
-            print(f"Re-loaded pretrained weights")
+            print(f"Loaded pretrained weights in testing script")
 
     def process_page(self, page_num):
         blocks = extract_page_geometric_features(self.doc, page_num)

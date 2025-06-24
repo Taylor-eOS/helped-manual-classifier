@@ -22,7 +22,7 @@ label_map = {'header': 0, 'body': 1, 'footer': 2, 'quote': 3, 'exclude': 4}
 
 class ManualClassifierGUI(FeatureUtils):
     def __init__(self, pdf_path=None, launch_gui=True):
-        self.pdf_path = pdf_path
+        self.launch_gui = launch_gui
         self.doc = fitz.open(pdf_path)
         self.total_pages = self.doc.page_count
         self.all_blocks = []
@@ -36,13 +36,15 @@ class ManualClassifierGUI(FeatureUtils):
         self.global_indices = []
         self.model = BlockClassifier(input_features=settings.input_feature_length)
         self.training_data = []
-        if settings.load_pretraining_weights: self.load_model_weights()
+        if settings.load_pretraining_weights and not launch_gui:
+            self.load_model_weights()
         self.root = tk.Tk()
         self.root.title("PDF Block Classifier with Prediction")
         self.current_label = 'body'
-        self.setup_ui()
-        self.extract_all_blocks()
-        self.load_current_page()
+        if launch_gui:
+            self.setup_ui()
+            self.extract_all_blocks()
+            self.load_current_page()
         self.recent_buffer = []
         self.retrain_delay = 10
         self.max_batch = settings.training_examples_per_cycle
@@ -51,8 +53,8 @@ class ManualClassifierGUI(FeatureUtils):
         self.page_retrain_limit = 0
         self.replay_retrain_count = 0
         self.replay_retrain_limit = settings.max_replay_rounds
-        self.launch_gui = launch_gui
-        if not launch_gui: return
+        if not launch_gui:
+            return
         self.schedule_retrainer()
         self.root.mainloop()
 
@@ -93,9 +95,11 @@ class ManualClassifierGUI(FeatureUtils):
             all_blocks.extend(page_blocks)
             all_texts.extend([block['text'] for block in page_blocks])
         if all_texts:
-            print("Creating embeddings")
-            raw_embeddings = get_embedding(all_texts)
-            embeddings = apply_document_pca(raw_embeddings, settings.embedding_components)
+            if self.launch_gui:
+                print("Creating embeddings")
+                embeddings = apply_document_pca(get_embedding(all_texts), settings.embedding_components)
+            else:
+                embeddings = np.zeros((len(all_texts), settings.embedding_components))
         else:
             embeddings = np.zeros((0, settings.embedding_components))
         for i, block in enumerate(all_blocks):
@@ -340,7 +344,7 @@ class ManualClassifierGUI(FeatureUtils):
             current_label = self.block_classifications[global_idx]
             if current_label != '0':
                 self.add_training_example(block, current_label)
-                print(f"Page training: '{current_label}'")
+                if False: print(f"Label: '{current_label}'")
                 if False: print(f"{block['text'][:50].replace('\n', '\\n')}")
         sorted_blocks = sorted(self.current_page_blocks, key=lambda b: (b['y0'], b['x0']))
         for block in sorted_blocks:
