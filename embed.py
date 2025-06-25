@@ -19,7 +19,7 @@ def _load_components(model_name="sentence-transformers/all-MiniLM-L6-v2"):
             _model = AutoModel.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
     return _tokenizer, _model
 
-def get_embedding(texts, batch_size=32):
+def get_embedding(texts, batch_size=64):
     if isinstance(texts, str):
         texts = [texts]
     if not texts:
@@ -61,11 +61,10 @@ if __name__ == "__main__":
     test_sentences = [
         "I would be happy to do this",
         "Certainly",
-        "He rejoiced with anticipation",
-        "Refusing is the best option",
-        "This is not ok",
-        "All bets are off",]
+        "Refusing is the safer option",
+        "No",]
     vectors = get_embedding(test_sentences)
+    vectors = apply_document_pca(vectors)
     for i, vec in enumerate(vectors):
         print(f"{i}: {', '.join(f'{v:.4f}' for v in vec)}")
 

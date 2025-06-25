@@ -64,8 +64,9 @@ class PDFEvaluator:
 
     def _attach_embeddings(self, blocks, texts):
         if texts:
-            print("Creating embeddings")
-            raw_emb = get_embedding(texts)
+            texts_length = len(texts)
+            print(f"Creating {texts_length} embeddings")
+            raw_emb = get_embedding(texts, texts_length)
             emb = apply_document_pca(raw_emb, settings.embedding_components)
         else:
             emb = np.zeros((0, settings.embedding_components))

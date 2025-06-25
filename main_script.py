@@ -96,8 +96,9 @@ class ManualClassifierGUI(FeatureUtils):
             all_texts.extend([block['text'] for block in page_blocks])
         if all_texts:
             if self.launch_gui:
-                print("Creating embeddings")
-                embeddings = apply_document_pca(get_embedding(all_texts), settings.embedding_components)
+                texts_length = len(all_texts)
+                print(f"Creating {texts_length} embeddings")
+                embeddings = apply_document_pca(get_embedding(all_texts, texts_length), settings.embedding_components)
             else:
                 embeddings = np.zeros((len(all_texts), settings.embedding_components))
         else:
