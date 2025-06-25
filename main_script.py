@@ -94,11 +94,12 @@ class ManualClassifierGUI(FeatureUtils):
             page_blocks = extract_page_geometric_features(self.doc, page_num)
             all_blocks.extend(page_blocks)
             all_texts.extend([block['text'] for block in page_blocks])
-        if all_texts:
+        if all_texts and settings.embedding_components > 0:
             if self.launch_gui:
                 texts_length = len(all_texts)
                 print(f"Creating {texts_length} embeddings")
-                embeddings = apply_document_pca(get_embedding(all_texts, texts_length), settings.embedding_components)
+                embeddings = get_embedding(all_texts, texts_length)
+                #embeddings = apply_document_pca(embeddings, settings.embedding_components)
             else:
                 embeddings = np.zeros((len(all_texts), settings.embedding_components))
         else:

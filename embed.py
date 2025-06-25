@@ -1,8 +1,6 @@
 import os, threading
-import numpy as np
-import torch
 from transformers import AutoTokenizer, AutoModel
-from sklearn.decomposition import PCA, TruncatedSVD
+import numpy as np
 import settings
 
 _model_lock = threading.Lock()
@@ -19,7 +17,31 @@ def _load_components(model_name="sentence-transformers/all-MiniLM-L6-v2"):
             _model = AutoModel.from_pretrained(model_name, cache_dir=cache_dir, local_files_only=True)
     return _tokenizer, _model
 
-def get_embedding(texts, batch_size=64):
+def get_embedding(texts, batch_size):
+    if settings.embedding_components == 0:
+        return np.zeros((len(texts), 0))
+    from sklearn.decomposition import TruncatedSVD
+    if settings.use_jina:
+        return get_embedding_jina(texts, batch_size)
+    else:
+        return get_embedding_st(texts, batch_size)
+
+def get_embedding_jina(texts, batch_size=64):
+    model = AutoModel.from_pretrained("jinaai/jina-embeddings-v3", trust_remote_code=True)
+    device = settings.device; model.to(device)
+    if isinstance(texts, str): texts = [texts]
+    if not texts: return np.zeros((0, settings.embedding_components))
+    all_vecs = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        batch = [t[: settings.truncate_embedding_input] for t in batch]
+        emb = model.encode(batch, task="classification", truncate_dim=32)
+        normed = emb / np.linalg.norm(emb, axis=1, keepdims=True)
+        all_vecs.append(normed)
+    return np.vstack(all_vecs)
+
+def get_embedding_st(texts, batch_size=64):
+    import torch
     if isinstance(texts, str):
         texts = [texts]
     if not texts:
@@ -45,8 +67,10 @@ def get_embedding(texts, batch_size=64):
     raw = np.vstack(all_vecs)
     svd = TruncatedSVD(n_components=settings.embedding_components)
     return svd.fit_transform(raw)
+    #return apply_document_pca(raw)
 
-def apply_document_pca(raw_embeddings, n_components_desired):
+def apply_document_pca(raw_embeddings, n_components_desired=settings.embedding_components):
+    from sklearn.decomposition import PCA
     if len(raw_embeddings) == 0:
         return np.zeros((0, n_components_desired))
     n_components = min(n_components_desired, raw_embeddings.shape[0])
@@ -59,10 +83,10 @@ def apply_document_pca(raw_embeddings, n_components_desired):
 
 if __name__ == "__main__":
     test_sentences = [
-        "I would be happy to do this",
-        "Certainly",
-        "Refusing is the safer option",
-        "No",]
+        "I would be happy to comply.",
+        "Certainly.",
+        "Refusing is the safer option.",
+        "No.",]
     vectors = get_embedding(test_sentences)
     vectors = apply_document_pca(vectors)
     for i, vec in enumerate(vectors):
