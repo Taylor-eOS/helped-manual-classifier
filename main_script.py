@@ -271,26 +271,6 @@ class ManualClassifierGUI(FeatureUtils):
                 self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
                 break
 
-    def on_canvas_click_old(self, event):
-        x = event.x / (self.zoom * self.scale)
-        y = event.y / (self.zoom * self.scale)
-        for block in self.current_page_blocks:
-            if (block['x0'] <= x <= block['x1'] and block['y0'] <= y <= block['y1']):
-                global_idx = block['global_idx']
-                self.block_classifications[global_idx] = self.current_label
-                self.manual_overrides.add(global_idx)
-                self.add_training_example(block, self.current_label)
-                self.page_buffer.append({
-                    'text': block['text'],
-                    'label': self.current_label,
-                    'y0': block['y0'],
-                    'x0': block['x0'],
-                    'global_idx': global_idx})
-                self.draw_blocks()
-                self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
-        if len(self.page_buffer) >= self.max_batch:
-            self.update_model_and_predictions()
-
     def next_page(self):
         if self.current_page_blocks:
             self.finalize_current_page()
@@ -303,6 +283,7 @@ class ManualClassifierGUI(FeatureUtils):
         self.page_retrain_limit = len(self.current_page_blocks)
         self.replay_retrain_count = 0
         self.schedule_retrainer()
+        self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
 
     def set_current_label(self, label):
         self.current_label = label
@@ -330,6 +311,7 @@ class ManualClassifierGUI(FeatureUtils):
             self.select_block(block, label, "keyboard")
         elif result == "PAGE_DONE":
             self.next_page()
+        self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
 
     def finish_classification(self):
         torch.save(self.model.state_dict(), 'weights.pt')
