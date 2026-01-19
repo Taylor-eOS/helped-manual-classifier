@@ -14,7 +14,7 @@ from model import BlockClassifier, training_data
 from utils import drop_to_file, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from feature_utils import FeatureUtils
-from embed import get_embedding, apply_document_pca
+from embed import get_raw_embedding
 import settings
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
@@ -58,11 +58,6 @@ class ManualClassifierGUI(FeatureUtils):
         self.schedule_retrainer()
         self.root.mainloop()
 
-    def schedule_retrainer(self):
-        if not self.training_data and not self.recent_buffer: return
-        limit = getattr(self, 'page_retrain_limit', 0)
-        if self.page_retrain_count < limit or self.replay_retrain_count < self.replay_retrain_limit or self.recent_buffer: self.root.after(self.retrain_delay, self.retrain_tick)
-
     def setup_ui(self):
         self.canvas = tk.Canvas(self.root, bg = "white")
         self.canvas.pack(fill = tk.BOTH, expand = True)
@@ -98,8 +93,7 @@ class ManualClassifierGUI(FeatureUtils):
             if self.launch_gui:
                 texts_length = len(all_texts)
                 print(f"Creating {texts_length} embeddings")
-                embeddings = get_embedding(all_texts, texts_length)
-                #embeddings = apply_document_pca(embeddings, settings.embedding_components)
+                embeddings = get_raw_embedding(all_texts, texts_length)
             else:
                 embeddings = np.zeros((len(all_texts), settings.embedding_components))
         else:
@@ -208,14 +202,6 @@ class ManualClassifierGUI(FeatureUtils):
             return [], []
         features, labels = zip(*self.training_data)
         return list(features), list(labels)
-
-    def load_current_page(self):
-        page_blocks = [block for block in self.all_blocks if block['page_num'] == self.current_page]
-        self.current_page_blocks = page_blocks
-        self.global_indices = [block['global_idx'] for block in page_blocks]
-        self.page_retrain_count = 0
-        self.page_retrain_limit = len(page_blocks)
-        self.replay_retrain_count = 0
 
     def update_model_and_predictions(self):
         if self.training_lock or not self.page_buffer:
