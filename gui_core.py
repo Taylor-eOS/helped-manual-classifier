@@ -21,7 +21,7 @@ def draw_blocks(self):
         idx = block['global_idx']
         color = get_block_color(self.block_classifications[idx])
         manual = idx in self.manual_overrides
-        width = 4 if manual else 2
+        width = 4 if manual else 3
         stipple = '' if manual else 'gray25'
         x0 = block['x0'] * self.zoom * self.scale
         y0 = block['y0'] * self.zoom * self.scale

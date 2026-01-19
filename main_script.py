@@ -386,6 +386,29 @@ class ManualClassifierGUI(FeatureUtils):
             self.finish_classification()
             return
         self.load_current_page()
+        if self.launch_gui and self.current_page_blocks:
+            print(f"\nSemantic confidences page {self.current_page + 1}:")
+            short_label_names = ['h', 'b', 'f', 'q', 'e']
+            embs = [block.get('raw_embedding', [0.0] * 384) for block in self.current_page_blocks]
+            if embs:
+                emb_array = np.array(embs, dtype=np.float32)
+                _, probs_np = self.get_semantic_logits(emb_array)
+                if probs_np.ndim == 1:
+                    probs_np = probs_np[np.newaxis, :]
+                sorted_indices = sorted(
+                    range(len(self.current_page_blocks)),
+                    key=lambda i: (self.current_page_blocks[i]['y0'], self.current_page_blocks[i]['x0']))
+                for idx in sorted_indices:
+                    block = self.current_page_blocks[idx]
+                    p = probs_np[idx]
+                    top_idx = int(np.argmax(p))
+                    conf = float(p[top_idx])
+                    conf_str = " ".join(f"{short_label_names[j]}:{p[j]:.3f}" for j in range(5))
+                    text_snip = block['text'].replace('\n', ' ').strip()
+                    if len(text_snip) > 4:
+                        text_snip = text_snip[:4].rstrip()
+                    text_snip = "\"" + text_snip + "\""
+                    print(f"{block['global_idx']:4d}: {text_snip} {conf_str} (top {short_label_names[top_idx]} {conf:.2f})")
         self.page_retrain_count = 0
         self.page_retrain_limit = len(self.current_page_blocks)
         self.replay_retrain_count = 0
