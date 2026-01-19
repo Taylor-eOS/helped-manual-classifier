@@ -14,7 +14,8 @@ from model import BlockClassifier, training_data
 from utils import drop_to_file, extract_page_geometric_features
 from gui_core import load_current_page, draw_blocks, update_button_highlight
 from feature_utils import FeatureUtils
-from embed import get_raw_embedding
+from embed_semantic import get_raw_embedding
+from model_semantic import SemanticHead, LayoutClassifier
 import settings
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
@@ -82,6 +83,21 @@ class ManualClassifierGUI(FeatureUtils):
         self.scale = 1.0
         self.geometry_set = False
 
+    def build_models(self):
+        device = settings.device
+        input_dim = settings.input_feature_length
+        if not hasattr(self, 'semantic_head') or self.semantic_head is None:
+            self.semantic_head = SemanticHead(input_dim=384, hidden=128, num_classes=5).to(device)
+            self.semantic_optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=settings.learning_rate, weight_decay=1e-4)
+        if not hasattr(self, 'layout_model') or self.layout_model is None:
+            self.layout_model = LayoutClassifier(input_dim=input_dim, hidden=64, num_classes=5).to(device)
+            self.layout_optimizer = torch.optim.AdamW(self.layout_model.parameters(), lr=settings.learning_rate, weight_decay=1e-4)
+        self.criterion = nn.CrossEntropyLoss()
+        if not hasattr(self, 'semantic_recent_buffer'):
+            self.semantic_recent_buffer = []
+        if not hasattr(self, 'semantic_training_data'):
+            self.semantic_training_data = []
+
     def extract_all_blocks(self):
         all_blocks = []
         all_texts = []
@@ -89,24 +105,66 @@ class ManualClassifierGUI(FeatureUtils):
             page_blocks = extract_page_geometric_features(self.doc, page_num)
             all_blocks.extend(page_blocks)
             all_texts.extend([block['text'] for block in page_blocks])
+        embeddings = np.zeros((0, 384))
         if all_texts and settings.embedding_components > 0:
             if self.launch_gui:
                 texts_length = len(all_texts)
                 print(f"Creating {texts_length} embeddings")
                 embeddings = get_raw_embedding(all_texts, texts_length)
             else:
-                embeddings = np.zeros((len(all_texts), settings.embedding_components))
-        else:
-            embeddings = np.zeros((0, settings.embedding_components))
+                embeddings = np.zeros((len(all_texts), 384))
         for i, block in enumerate(all_blocks):
-            for j in range(settings.embedding_components):
-                block[f'embed_{j}'] = embeddings[i][j] if j < embeddings.shape[1] else 0.0
+            raw = embeddings[i] if i < embeddings.shape[0] else np.zeros(384)
+            block['raw_embedding'] = raw.tolist()
         for i, block in enumerate(all_blocks):
             block['global_idx'] = i
         self.all_blocks = all_blocks
         self.block_classifications = ['0'] * len(all_blocks)
         self.compute_global_stats()
+        self.build_models()
         return all_blocks
+
+    def get_semantic_logits(self, embedding_np):
+        device = settings.device
+        self.semantic_head.eval()
+        with torch.no_grad():
+            t = torch.tensor(np.asarray(embedding_np, dtype=np.float32), device=device)
+            if t.dim() == 1:
+                t = t.unsqueeze(0)
+            logits = self.semantic_head(t)
+            probs = torch.softmax(logits, dim=1)
+        logits_np = logits.cpu().numpy()
+        probs_np = probs.cpu().numpy()
+        if logits_np.shape[0] == 1:
+            return logits_np.squeeze(0), probs_np.squeeze(0)
+        return logits_np, probs_np
+
+    def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None):
+        geom = []
+        geom.append(block.get('x0', 0.0) / max(1.0, doc_width))
+        geom.append(block.get('x1', 0.0) / max(1.0, doc_width))
+        geom.append(block.get('y0', 0.0) / max(1.0, doc_height))
+        geom.append(block.get('y1', 0.0) / max(1.0, doc_height))
+        geom.append(block.get('width', geom[-1] - geom[-2]) if 'width' in block else (geom[1] - geom[0]))
+        geom.append(block.get('height', geom[3] - geom[2]) if 'height' in block else (geom[3] - geom[2]))
+        if settings.embedding_components > 0:
+            if semantic_override is not None:
+                semantic_conf = list(semantic_override)
+            else:
+                emb = block.get('raw_embedding', [0.0] * 384)
+                _, probs = self.get_semantic_logits(emb)
+                semantic_conf = probs.tolist()
+            if len(semantic_conf) < settings.embedding_components:
+                semantic_conf = semantic_conf + [0.0] * (settings.embedding_components - len(semantic_conf))
+        else:
+            semantic_conf = [0.0] * settings.embedding_components
+        features = geom + semantic_conf
+        if len(features) != settings.input_feature_length:
+            if len(features) < settings.input_feature_length:
+                features = features + [0.0] * (settings.input_feature_length - len(features))
+            else:
+                features = features[:settings.input_feature_length]
+        return features
 
     def schedule_retrainer(self):
         if not self.training_data and not self.recent_buffer:
@@ -117,16 +175,27 @@ class ManualClassifierGUI(FeatureUtils):
             self.root.after(self.retrain_delay, self.retrain_tick)
 
     def retrain_tick(self):
+        self.build_models()
         if self.recent_buffer:
             batch, labels = self.fetch_training_batch(self.max_batch)
-            self.model = self.train_model(features=batch, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
+            semantic_batch = [emb for emb, _ in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
+            semantic_labels = [l for _, l in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
+            if semantic_batch:
+                self.train_semantic_head(semantic_batch, semantic_labels, epochs=settings.epochs, lr=settings.learning_rate)
+            if batch:
+                self.layout_model = self.train_model(features=batch, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
             self.page_retrain_count = 0
             self.replay_retrain_count = 0
             if self.launch_gui: print(f"Train: fresh batch: {len(batch)} examples")
         elif self.replay_retrain_count < self.replay_retrain_limit and len(self.training_data) > 0:
             self.replay_retrain_count += 1
             batch, labels = self.fetch_training_batch(self.max_batch)
-            self.model = self.train_model(features=batch, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
+            semantic_batch = [emb for emb, _ in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
+            semantic_labels = [l for _, l in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
+            if semantic_batch:
+                self.train_semantic_head(semantic_batch, semantic_labels, epochs=1, lr=settings.learning_rate * 0.5)
+            if batch:
+                self.layout_model = self.train_model(features=batch, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
             if self.launch_gui: print(f"Train: Replay {self.replay_retrain_count}/{self.replay_retrain_limit}, Loss: replaying {len(batch)} examples")
         else:
             if self.launch_gui: print("Train: No data or replay limit reached")
@@ -151,47 +220,93 @@ class ManualClassifierGUI(FeatureUtils):
                 fb.append(f)
                 lb.append(l)
                 self.training_data.insert(0, (f, l))
+        n_sem_recent = min(len(self.semantic_recent_buffer), max_items)
+        for _ in range(n_sem_recent):
+            emb, l = self.semantic_recent_buffer.pop(0)
+            self.semantic_training_data.append((emb, l))
+        if remaining > 0 and self.semantic_training_data:
+            replay_size = min(remaining, len(self.semantic_training_data))
+            replay_data = self.semantic_training_data[-replay_size:]
+            self.semantic_training_data = self.semantic_training_data[:-replay_size]
+            for emb, l in replay_data:
+                self.semantic_training_data.insert(0, (emb, l))
         return fb, lb
+
+    def train_semantic_head(self, embeddings, labels, epochs=1, lr=None, print_loss=True):
+        if not embeddings or not labels:
+            return self.semantic_head
+        device = settings.device
+        X = torch.tensor(np.asarray(embeddings, dtype=np.float32), dtype=torch.float32, device=device)
+        y = torch.tensor(labels, dtype=torch.long, device=device)
+        optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=(lr or settings.learning_rate) * 0.8, weight_decay=1e-4)
+        criterion = nn.CrossEntropyLoss()
+        dataset = torch.utils.data.TensorDataset(X, y)
+        loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
+        self.semantic_head.train()
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            for batch_X, batch_y in loader:
+                optimizer.zero_grad()
+                outputs = self.semantic_head(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.semantic_head.parameters(), 1.0)
+                optimizer.step()
+                epoch_loss += loss.item()
+            if print_loss and self.launch_gui:
+                print(f"Semantic head train: Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
+        return self.semantic_head
 
     def train_model(self, features, labels, print_loss=True, epochs=settings.epochs, lr=settings.learning_rate):
         if not features or not labels:
-            return self.model
+            return self.layout_model
         if len(features) != len(labels):
             print(f"Warning: Feature count ({len(features)}) doesn't match label count ({len(labels)})")
-            return self.model
-        X_train = torch.tensor(features, dtype=torch.float32)
-        y_train = torch.tensor(labels, dtype=torch.long)
-        optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
+            return self.layout_model
+        device = settings.device
+        X_train = torch.tensor(np.asarray(features, dtype=np.float32), dtype=torch.float32, device=device)
+        y_train = torch.tensor(labels, dtype=torch.long, device=device)
+        optimizer = torch.optim.AdamW(self.layout_model.parameters(), lr=lr, weight_decay=1e-4)
         criterion = nn.CrossEntropyLoss()
         dataset = torch.utils.data.TensorDataset(X_train, y_train)
         loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
-        if settings.debug_input_shape and self.launch_gui:
-            print(X_train.shape)
-            print(settings.input_feature_length)
-        self.model.train()
+        self.layout_model.train()
         for epoch in range(epochs):
-            epoch_loss = 0
+            epoch_loss = 0.0
             for batch_X, batch_y in loader:
                 optimizer.zero_grad()
-                outputs = self.model(batch_X)
+                outputs = self.layout_model(batch_X)
                 loss = criterion(outputs, batch_y)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                torch.nn.utils.clip_grad_norm_(self.layout_model.parameters(), 1.0)
                 optimizer.step()
                 epoch_loss += loss.item()
             if print_loss and len(loader) and self.launch_gui:
                 print(f"Train: Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(loader):.4f}")
         if settings.debug_model_weight_usage:
             with torch.no_grad():
-                weights = self.model.initial_fc.weight.cpu().numpy()
+                weights = self.layout_model.initial_fc.weight.cpu().numpy()
                 mean_abs_weights = np.mean(np.abs(weights), axis=0)
                 for i, w in enumerate(mean_abs_weights):
                     if self.launch_gui: print(f"Feature {i}: {w:.6f}")
-        return self.model
+        return self.layout_model
 
     def add_training_example(self, block, label, doc_width=612, doc_height=792):
-        features = self.get_global_features(block, doc_width, doc_height, True)
+        self.build_models()
         lab = label_map[label]
+        emb = np.asarray(block.get('raw_embedding', [0.0] * 384), dtype=np.float32)
+        self.semantic_head.train()
+        device = settings.device
+        t_emb = torch.tensor(emb, dtype=torch.float32, device=device).unsqueeze(0)
+        t_label = torch.tensor([lab], dtype=torch.long, device=device)
+        self.semantic_optimizer.zero_grad()
+        logits = self.semantic_head(t_emb)
+        loss = self.criterion(logits, t_label)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.semantic_head.parameters(), 1.0)
+        self.semantic_optimizer.step()
+        self.semantic_recent_buffer.append((emb.tolist(), lab))
+        features = self.get_global_features(block, doc_width, doc_height, True)
         self.recent_buffer.append((features, lab))
         if not hasattr(self, '_scheduler_started'):
             self._scheduler_started = True
@@ -230,11 +345,17 @@ class ManualClassifierGUI(FeatureUtils):
     def predict_current_page(self):
         if not self.current_page_blocks:
             return []
-        self.model.eval()
-        page_features = [self.get_global_features(block, 612, 792, False) for block in self.current_page_blocks]
-        X_test = torch.tensor(page_features, dtype=torch.float32)
+        self.layout_model.eval()
+        self.semantic_head.eval()
+        page_features = []
+        for block in self.current_page_blocks:
+            emb = block.get('raw_embedding', [0.0] * 384)
+            _, probs = self.get_semantic_logits(emb)
+            feat = self.get_global_features(block, 612, 792, False, semantic_override=probs)
+            page_features.append(feat)
+        X_test = torch.tensor(np.asarray(page_features, dtype=np.float32), dtype=torch.float32)
         with torch.no_grad():
-            outputs = self.model(X_test)
+            outputs = self.layout_model(X_test)
             _, predictions = torch.max(outputs, 1)
         label_names = ['header', 'body', 'footer', 'quote', 'exclude']
         return [label_names[p] for p in predictions.tolist()]
@@ -300,8 +421,9 @@ class ManualClassifierGUI(FeatureUtils):
         self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
 
     def finish_classification(self):
-        torch.save(self.model.state_dict(), 'weights.pt')
-        print("Model weights saved")
+        torch.save(self.layout_model.state_dict(), 'weights_layout.pt')
+        torch.save(self.semantic_head.state_dict(), 'weights_semantic.pt')
+        if self.launch_gui: print("Model weights saved")
         messagebox.showinfo("Complete", "Classification saved")
         self.doc.close()
         self.root.quit()

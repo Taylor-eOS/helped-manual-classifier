@@ -6,7 +6,7 @@ from collections import defaultdict
 from main_script import ManualClassifierGUI
 from model import BlockClassifier
 from utils import extract_page_geometric_features, process_drop_cap
-from embed import get_embedding, apply_document_pca
+from embed_semantic import get_raw_embedding
 import settings
 
 class PDFEvaluator:
@@ -14,9 +14,10 @@ class PDFEvaluator:
         self.doc = fitz.open(pdf_path)
         self.total_pages = self.doc.page_count
         self.ground_truth = self.load_ground_truth(ground_truth_path)
-        self.model = BlockClassifier()
         self.gui = ManualClassifierGUI(pdf_path, launch_gui=False)
-        self.gui.model = self.model
+        self.gui.build_models()
+        if settings.load_pretraining_weights:
+            self.load_model_weights()
         if settings.load_pretraining_weights:
             self.load_model_weights()
         self.current_page = 0
@@ -31,9 +32,12 @@ class PDFEvaluator:
         return truth
 
     def load_model_weights(self):
-        if os.path.exists(settings.pretrained_file):
-            self.model.load_state_dict(torch.load(settings.pretrained_file))
-            print(f"Loaded pretrained weights in testing script")
+        if os.path.exists(settings.pretrained_layout_file):
+            self.gui.layout_model.load_state_dict(torch.load(settings.pretrained_layout_file))
+            print("Loaded pretrained layout weights")
+        if os.path.exists(settings.pretrained_semantic_file):
+            self.gui.semantic_head.load_state_dict(torch.load(settings.pretrained_semantic_file))
+            print("Loaded pretrained semantic weights")
 
     def process_page(self, page_num):
         blocks = extract_page_geometric_features(self.doc, page_num)
@@ -44,10 +48,17 @@ class PDFEvaluator:
             return []
         for block in blocks:
             block['page_num'] = page_num
-        self.model.eval()
-        X = torch.tensor([self.gui.get_global_features(b, doc_width, doc_height, settings.dump_testing_feature_data) for b in blocks], dtype=torch.float32)
+        self.gui.layout_model.eval()
+        self.gui.semantic_head.eval()
+        feats = []
+        for b in blocks:
+            emb = b.get('raw_embedding', [0.0] * 384)
+            _, probs = self.gui.get_semantic_logits(emb)
+            f = self.gui.get_global_features(b, doc_width, doc_height, False, semantic_override=probs)
+            feats.append(f)
+        X = torch.tensor(feats, dtype=torch.float32)
         with torch.no_grad():
-            logits = self.model(X)
+            logits = self.gui.layout_model(X)
             _, preds = torch.max(logits, 1)
         label_map = ['h1', 'p', 'footer', 'blockquote', 'exclude']
         return [label_map[p] for p in preds.tolist()]
@@ -64,16 +75,15 @@ class PDFEvaluator:
         return all_blocks, all_texts
 
     def _attach_embeddings(self, blocks, texts):
-        if texts and settings.embedding_components > 0:
+        if texts:
             texts_length = len(texts)
             print(f"Creating {texts_length} embeddings")
-            emb = get_embedding(texts, texts_length)
-            #emb = apply_document_pca(emb, settings.embedding_components)
+            emb = get_raw_embedding(texts, texts_length)
         else:
-            emb = np.zeros((0, settings.embedding_components))
+            emb = np.zeros((0, 384))
         for i, b in enumerate(blocks):
-            for j in range(settings.embedding_components):
-                b[f'embed_{j}'] = emb[i][j] if j < emb.shape[1] else 0.0
+            raw = emb[i] if i < emb.shape[0] else np.zeros(384)
+            b['raw_embedding'] = raw.tolist()
 
     def _page_slices(self, blocks):
         idx = 0
@@ -100,35 +110,35 @@ class PDFEvaluator:
             page_true = gt[:len(blocks)]
             page_pred = preds[:len(gt)]
             limit = min(len(page_true), len(page_pred), len(blocks))
-            if limit>0:
+            if limit > 0:
                 correct = sum(page_true[i] == page_pred[i] for i in range(limit))
                 total_correct += correct
                 total_samples += limit
                 for i in range(limit):
                     true_counts[page_true[i]] += 1
-                page_accuracy = correct/limit
-                cumulative_accuracy = total_correct/total_samples
+                page_accuracy = correct / limit
+                cumulative_accuracy = total_correct / total_samples
                 print(f"Page {self.current_page+1}: Page accuracy {page_accuracy:.2%}, cumulative accuracy {cumulative_accuracy:.2%}")
                 if settings.print_mistaken_predictions:
                     self.write_mistaken_predictions(self.current_page+1, page_true, page_pred, blocks, limit, error_counts)
             for block, true_label in zip(blocks, gt):
-                self.gui.add_training_example(block,testing_label_map[true_label])
+                self.gui.add_training_example(block, testing_label_map[true_label])
             self.gui.schedule_retrainer()
-            #optionally pump a few ticks:
             for _ in range(self.gui.page_retrain_limit + self.gui.replay_retrain_limit):
                 self.gui.retrain_tick()
             self.current_page += 1
         self.doc.close()
-        final_acc = total_correct/total_samples if total_samples else 0
+        final_acc = total_correct / total_samples if total_samples else 0
         print(f"\nFinal Accuracy: {final_acc:.2%}")
         if settings.print_mistaken_predictions:
             with open('mistaken_predictions.txt', 'a') as f:
                 f.write("\nMistake counts:\n")
-                for (pred, true), cnt in sorted(error_counts.items(), key = lambda x:-x[1]):
+                for (pred, true), cnt in sorted(error_counts.items(), key=lambda x: -x[1]):
                     total = true_counts[true]
                     prop = cnt / total
                     f.write(f"{true}-{pred}: {cnt}/{total} ({cnt/total*100:.0f}%)\n")
-        torch.save(self.model.state_dict(), 'weights.pt')
+        torch.save(self.gui.layout_model.state_dict(), 'weights_layout.pt')
+        torch.save(self.gui.semantic_head.state_dict(), 'weights_semantic.pt')
         return final_acc
 
     def write_mistaken_predictions(self, page_number, page_true, page_pred, blocks, limit, error_counts):
