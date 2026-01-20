@@ -1,8 +1,8 @@
 ### **PDF Block Classifier with Machine Learning Assistance**
 
 This project is a GUI-based tool for classifying text blocks in PDF documents into predefined categories such as headers, body text (`<p>`), footers, quotes, and excluded content. The user manually selects classifications and the model trains on each page to improve the prediction of subsequent pages. Classification works smoothly now, I ran through a 600 page book in a few minutes.<br>
-The tool is designed to assist users in organizing and extracting the text from PDF documents, for instance for conversion into a reflowable format.<br>
-This was a learning project that gradually extended on itself, and the code is very messy.<br>
+The tool is designed to assist users in organizing and extracting the text from PDF documents, for instance for conversion into a reflowable format.<br><br>
+This was a learning project that gradually extended on itself, and the code is very messy, to the point of being difficult to handle. The approach of guessing blocks in isolation without taking recent mistakes into account is imperfect and throws away a lot of information. So the script rattles through quite a complex machinery for fairly inaccurate results.<br>
 
 #### **Key Features**
 1. **Interactive GUI**: A Tkinter interface allows users to visually inspect and classify text blocks on PDF pages.
