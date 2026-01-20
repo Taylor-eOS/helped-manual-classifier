@@ -97,6 +97,8 @@ class ManualClassifierGUI(FeatureUtils):
             self.semantic_recent_buffer = []
         if not hasattr(self, 'semantic_training_data'):
             self.semantic_training_data = []
+        if not hasattr(self, 'semantic_class_counts'):
+            self.semantic_class_counts = [0, 0, 0, 0, 0]
 
     def extract_all_blocks(self):
         all_blocks = []
@@ -238,8 +240,13 @@ class ManualClassifierGUI(FeatureUtils):
         device = settings.device
         X = torch.tensor(np.asarray(embeddings, dtype=np.float32), dtype=torch.float32, device=device)
         y = torch.tensor(labels, dtype=torch.long, device=device)
+        class_counts = np.bincount(labels, minlength=5)
+        total_samples = len(labels)
+        class_weights = torch.tensor([total_samples / (5 * max(count, 1)) for count in class_counts], dtype=torch.float32, device=device)
+        if self.launch_gui:
+            print(f"Semantic class weights: {class_weights.cpu().numpy()}")
         optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=(lr or settings.learning_rate) * 0.8, weight_decay=1e-4)
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
         dataset = torch.utils.data.TensorDataset(X, y)
         loader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=True)
         self.semantic_head.train()
@@ -294,14 +301,19 @@ class ManualClassifierGUI(FeatureUtils):
     def add_training_example(self, block, label, doc_width=612, doc_height=792):
         self.build_models()
         lab = label_map[label]
+        self.semantic_class_counts[lab] += 1
         emb = np.asarray(block.get('raw_embedding', [0.0] * 384), dtype=np.float32)
         self.semantic_head.train()
         device = settings.device
+        class_counts = self.semantic_class_counts
+        total_samples = sum(class_counts)
+        class_weights = torch.tensor([total_samples / (5 * max(count, 1)) for count in class_counts], dtype=torch.float32, device=device)
+        criterion_weighted = nn.CrossEntropyLoss(weight=class_weights)
         t_emb = torch.tensor(emb, dtype=torch.float32, device=device).unsqueeze(0)
         t_label = torch.tensor([lab], dtype=torch.long, device=device)
         self.semantic_optimizer.zero_grad()
         logits = self.semantic_head(t_emb)
-        loss = self.criterion(logits, t_label)
+        loss = criterion_weighted(logits, t_label)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.semantic_head.parameters(), 1.0)
         self.semantic_optimizer.step()
