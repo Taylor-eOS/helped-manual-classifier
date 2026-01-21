@@ -156,10 +156,11 @@ class PDFEvaluator:
 
 def main():
     open(settings.feature_data_file, "w").close()
-    if len(sys.argv) != 2:
-        print("Usage: add input pdf file basename as only argument")
-        sys.exit(1)
-    name = sys.argv[1]
+    #if len(sys.argv) != 2:
+    #    print("Usage: add input pdf file basename as only argument")
+    #    sys.exit(1)
+    #name = sys.argv[1]
+    name = 'testing'
     evaluator = PDFEvaluator(f"{name}.pdf", "ground_truth.json")
     final_acc = evaluator.evaluate()
 
