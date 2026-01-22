@@ -86,6 +86,9 @@ class ManualClassifierGUI(FeatureUtils):
     def build_models(self):
         device = settings.device
         input_dim = settings.input_feature_length
+        expected = len(settings.BASE_FEATURES) + 4 + 5
+        if input_dim != expected:
+            raise ValueError(f"input_feature_length {input_dim} != expected {expected}")
         if not hasattr(self, 'semantic_head') or self.semantic_head is None:
             self.semantic_head = SemanticHead(input_dim=384, hidden=128, num_classes=5).to(device)
             self.semantic_optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=settings.learning_rate, weight_decay=1e-4)
@@ -108,7 +111,7 @@ class ManualClassifierGUI(FeatureUtils):
             all_blocks.extend(page_blocks)
             all_texts.extend([block['text'] for block in page_blocks])
         embeddings = np.zeros((0, 384))
-        if all_texts and settings.embedding_components > 0:
+        if all_texts:
             if self.launch_gui:
                 texts_length = len(all_texts)
                 print(f"Creating {texts_length} embeddings")
@@ -142,66 +145,51 @@ class ManualClassifierGUI(FeatureUtils):
         return logits_np, probs_np
 
     def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None, dump=False):
-        if dump:
-            current_page = block.get('page_num', -1)
-            if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
-                self._dump_counter = 0
-                self._last_dump_page = current_page
-        orig = []
-        orig_names = []
-        for name in settings.BASE_FEATURES:
-            v = block.get(name, 0.0)
-            scale = settings.SCALES.get(name)
-            if isinstance(scale, str):
-                denom = locals().get(scale, 1.0)
-                v = v / denom if denom else 0.0
-            elif scale:
-                v = v / scale
-            orig.append(float(v))
-            orig_names.append(name)
-        if self.global_stats and 'font_size' in block:
-            fs = block.get('font_size', 0.0)
-            all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
-            p = self.get_percentile(fs, all_fs)
-            z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
-            pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
-            c = float(self.is_consistent_across_pages(block))
-            glob = [p, z, pg, c]
-        else:
-            glob = [0.0, 0.0, 0.0, 0.0]
-        glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
-        if settings.embedding_components > 0:
+            if dump:
+                current_page = block.get('page_num', -1)
+                if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
+                    self._dump_counter = 0
+                    self._last_dump_page = current_page
+            orig = []
+            orig_names = []
+            for name in settings.BASE_FEATURES:
+                v = block.get(name, 0.0)
+                scale = settings.SCALES.get(name)
+                if isinstance(scale, str):
+                    denom = locals().get(scale, 1.0)
+                    v = v / denom if denom else 0.0
+                elif scale:
+                    v = v / scale
+                orig.append(float(v))
+                orig_names.append(name)
+            if self.global_stats and 'font_size' in block:
+                fs = block.get('font_size', 0.0)
+                all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
+                p = self.get_percentile(fs, all_fs)
+                z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
+                pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
+                c = float(self.is_consistent_across_pages(block))
+                glob = [p, z, pg, c]
+            else:
+                glob = [0.0, 0.0, 0.0, 0.0]
+            glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
             if semantic_override is not None:
                 semantic_conf = list(semantic_override)
             else:
                 emb = block.get('raw_embedding', [0.0] * 384)
                 _, probs = self.get_semantic_logits(emb)
                 semantic_conf = probs.tolist()
-            if len(semantic_conf) < settings.embedding_components:
-                semantic_conf = semantic_conf + [0.0] * (settings.embedding_components - len(semantic_conf))
-            else:
-                semantic_conf = semantic_conf[:settings.embedding_components]
-        else:
-            semantic_conf = []
-        semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
-        features = orig + glob + semantic_conf
-        feature_names = orig_names + glob_names + semantic_names
-        if len(features) != settings.input_feature_length:
-            if len(features) < settings.input_feature_length:
-                pad = settings.input_feature_length - len(features)
-                features = features + [0.0] * pad
-                feature_names = feature_names + [f'pad_{i}' for i in range(pad)]
-            else:
-                features = features[:settings.input_feature_length]
-                feature_names = feature_names[:settings.input_feature_length]
-        if dump or getattr(settings, 'debug_get_global_features', False):
-            if settings.debug_get_global_features:
-                idx = block.get('global_idx', '??')
-                print(f"Debug block {idx}:")
-                for name, val in zip(feature_names, features):
-                    print(f"  {name}: {val:.5f}")
-            self.dump_block_features(features, feature_names)
-        return features
+            semantic_conf = semantic_conf[:5]
+            if len(semantic_conf) != 5:
+                raise ValueError(f"Semantic head returned {len(semantic_conf)} classes, expected 5")
+            semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
+            features = orig + glob + semantic_conf
+            feature_names = orig_names + glob_names + semantic_names
+            if len(features) != settings.input_feature_length:
+                raise ValueError(f"Feature length mismatch: got {len(features)}, expected {settings.input_feature_length}")
+            if dump:
+                self.dump_block_features(features, feature_names)
+            return features
 
     def schedule_retrainer(self):
         if not self.training_data and not self.recent_buffer:
@@ -462,19 +450,6 @@ class ManualClassifierGUI(FeatureUtils):
         self.schedule_retrainer()
         self.status_var.set(f"Page {self.current_page+1}/{self.total_pages}")
 
-    def set_current_label(self, label):
-        self.current_label = label
-        self.update_button_highlight()
-
-    def update_button_highlight(self):
-        update_button_highlight(self.buttons, self.current_label)
-
-    def load_current_page(self):
-        return load_current_page(self)
-
-    def draw_blocks(self):
-        return draw_blocks(self)
-
     def on_key_press(self, event):
         key = event.keysym.lower()
         key_to_idx = {'h': 0, 'b': 1, 'f': 2, 'q': 3, 'e': 4}
@@ -521,6 +496,19 @@ class ManualClassifierGUI(FeatureUtils):
         if source == "manual":
             self.manual_overrides.add(global_idx)
         if False and self.launch_gui: print(f"{source.upper()}: Selected block as '{label}': {block['text'][:30].replace('\n', '').replace('\r', '')}")
+
+    def set_current_label(self, label):
+        self.current_label = label
+        self.update_button_highlight()
+
+    def update_button_highlight(self):
+        update_button_highlight(self.buttons, self.current_label)
+
+    def load_current_page(self):
+        return load_current_page(self)
+
+    def draw_blocks(self):
+        return draw_blocks(self)
 
     def apply_ml_predictions(self):
         if not self.current_page_blocks:
