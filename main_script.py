@@ -141,14 +141,35 @@ class ManualClassifierGUI(FeatureUtils):
             return logits_np.squeeze(0), probs_np.squeeze(0)
         return logits_np, probs_np
 
-    def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None):
-        geom = []
-        geom.append(block.get('x0', 0.0) / max(1.0, doc_width))
-        geom.append(block.get('x1', 0.0) / max(1.0, doc_width))
-        geom.append(block.get('y0', 0.0) / max(1.0, doc_height))
-        geom.append(block.get('y1', 0.0) / max(1.0, doc_height))
-        geom.append(block.get('width', geom[-1] - geom[-2]) if 'width' in block else (geom[1] - geom[0]))
-        geom.append(block.get('height', geom[3] - geom[2]) if 'height' in block else (geom[3] - geom[2]))
+    def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None, dump=False):
+        if dump:
+            current_page = block.get('page_num', -1)
+            if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
+                self._dump_counter = 0
+                self._last_dump_page = current_page
+        orig = []
+        orig_names = []
+        for name in settings.BASE_FEATURES:
+            v = block.get(name, 0.0)
+            scale = settings.SCALES.get(name)
+            if isinstance(scale, str):
+                denom = locals().get(scale, 1.0)
+                v = v / denom if denom else 0.0
+            elif scale:
+                v = v / scale
+            orig.append(float(v))
+            orig_names.append(name)
+        if self.global_stats and 'font_size' in block:
+            fs = block.get('font_size', 0.0)
+            all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
+            p = self.get_percentile(fs, all_fs)
+            z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
+            pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
+            c = float(self.is_consistent_across_pages(block))
+            glob = [p, z, pg, c]
+        else:
+            glob = [0.0, 0.0, 0.0, 0.0]
+        glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
         if settings.embedding_components > 0:
             if semantic_override is not None:
                 semantic_conf = list(semantic_override)
@@ -158,14 +179,28 @@ class ManualClassifierGUI(FeatureUtils):
                 semantic_conf = probs.tolist()
             if len(semantic_conf) < settings.embedding_components:
                 semantic_conf = semantic_conf + [0.0] * (settings.embedding_components - len(semantic_conf))
+            else:
+                semantic_conf = semantic_conf[:settings.embedding_components]
         else:
-            semantic_conf = [0.0] * settings.embedding_components
-        features = geom + semantic_conf
+            semantic_conf = []
+        semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
+        features = orig + glob + semantic_conf
+        feature_names = orig_names + glob_names + semantic_names
         if len(features) != settings.input_feature_length:
             if len(features) < settings.input_feature_length:
-                features = features + [0.0] * (settings.input_feature_length - len(features))
+                pad = settings.input_feature_length - len(features)
+                features = features + [0.0] * pad
+                feature_names = feature_names + [f'pad_{i}' for i in range(pad)]
             else:
                 features = features[:settings.input_feature_length]
+                feature_names = feature_names[:settings.input_feature_length]
+        if dump or getattr(settings, 'debug_get_global_features', False):
+            if settings.debug_get_global_features:
+                idx = block.get('global_idx', '??')
+                print(f"Debug block {idx}:")
+                for name, val in zip(feature_names, features):
+                    print(f"  {name}: {val:.5f}")
+            self.dump_block_features(features, feature_names)
         return features
 
     def schedule_retrainer(self):

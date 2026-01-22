@@ -160,8 +160,7 @@ def main():
     #    print("Usage: add input pdf file basename as only argument")
     #    sys.exit(1)
     #name = sys.argv[1]
-    name = 'testing'
-    evaluator = PDFEvaluator(f"{name}.pdf", "ground_truth.json")
+    evaluator = PDFEvaluator(f"{settings.test_file_basename}.pdf", "ground_truth.json")
     final_acc = evaluator.evaluate()
 
 if __name__ == "__main__":
