@@ -96,10 +96,10 @@ class ManualClassifierGUI(FeatureUtils):
             self.layout_model = LayoutClassifier(input_dim=input_dim, hidden=64, num_classes=5).to(device)
             self.layout_optimizer = torch.optim.AdamW(self.layout_model.parameters(), lr=settings.learning_rate, weight_decay=1e-4)
         self.criterion = nn.CrossEntropyLoss()
-        if not hasattr(self, 'semantic_recent_buffer'):
-            self.semantic_recent_buffer = []
-        if not hasattr(self, 'semantic_training_data'):
-            self.semantic_training_data = []
+        if not hasattr(self, 'recent_buffer'):
+            self.recent_buffer = []
+        if not hasattr(self, 'training_data'):
+            self.training_data = []
         if not hasattr(self, 'semantic_class_counts'):
             self.semantic_class_counts = [0, 0, 0, 0, 0]
 
@@ -145,51 +145,51 @@ class ManualClassifierGUI(FeatureUtils):
         return logits_np, probs_np
 
     def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None, dump=False):
-            if dump:
-                current_page = block.get('page_num', -1)
-                if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
-                    self._dump_counter = 0
-                    self._last_dump_page = current_page
-            orig = []
-            orig_names = []
-            for name in settings.BASE_FEATURES:
-                v = block.get(name, 0.0)
-                scale = settings.SCALES.get(name)
-                if isinstance(scale, str):
-                    denom = locals().get(scale, 1.0)
-                    v = v / denom if denom else 0.0
-                elif scale:
-                    v = v / scale
-                orig.append(float(v))
-                orig_names.append(name)
-            if self.global_stats and 'font_size' in block:
-                fs = block.get('font_size', 0.0)
-                all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
-                p = self.get_percentile(fs, all_fs)
-                z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
-                pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
-                c = float(self.is_consistent_across_pages(block))
-                glob = [p, z, pg, c]
-            else:
-                glob = [0.0, 0.0, 0.0, 0.0]
-            glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
-            if semantic_override is not None:
-                semantic_conf = list(semantic_override)
-            else:
-                emb = block.get('raw_embedding', [0.0] * 384)
-                _, probs = self.get_semantic_logits(emb)
-                semantic_conf = probs.tolist()
-            semantic_conf = semantic_conf[:5]
-            if len(semantic_conf) != 5:
-                raise ValueError(f"Semantic head returned {len(semantic_conf)} classes, expected 5")
-            semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
-            features = orig + glob + semantic_conf
-            feature_names = orig_names + glob_names + semantic_names
-            if len(features) != settings.input_feature_length:
-                raise ValueError(f"Feature length mismatch: got {len(features)}, expected {settings.input_feature_length}")
-            if dump:
-                self.dump_block_features(features, feature_names)
-            return features
+        if dump:
+            current_page = block.get('page_num', -1)
+            if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
+                self._dump_counter = 0
+                self._last_dump_page = current_page
+        orig = []
+        orig_names = []
+        for name in settings.BASE_FEATURES:
+            v = block.get(name, 0.0)
+            scale = settings.SCALES.get(name)
+            if isinstance(scale, str):
+                denom = locals().get(scale, 1.0)
+                v = v / denom if denom else 0.0
+            elif scale:
+                v = v / scale
+            orig.append(float(v))
+            orig_names.append(name)
+        if self.global_stats and 'font_size' in block:
+            fs = block.get('font_size', 0.0)
+            all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
+            p = self.get_percentile(fs, all_fs)
+            z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
+            pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
+            c = float(self.is_consistent_across_pages(block))
+            glob = [p, z, pg, c]
+        else:
+            glob = [0.0, 0.0, 0.0, 0.0]
+        glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
+        if semantic_override is not None:
+            semantic_conf = list(semantic_override)
+        else:
+            emb = block.get('raw_embedding', [0.0] * 384)
+            _, probs = self.get_semantic_logits(emb)
+            semantic_conf = probs.tolist()
+        semantic_conf = semantic_conf[:5]
+        if len(semantic_conf) != 5:
+            raise ValueError(f"Semantic head returned {len(semantic_conf)} classes, expected 5")
+        semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
+        features = orig + glob + semantic_conf
+        feature_names = orig_names + glob_names + semantic_names
+        if len(features) != settings.input_feature_length:
+            raise ValueError(f"Feature length mismatch: got {len(features)}, expected {settings.input_feature_length}")
+        if dump:
+            self.dump_block_features(features, feature_names)
+        return features
 
     def schedule_retrainer(self):
         if not self.training_data and not self.recent_buffer:
@@ -202,59 +202,65 @@ class ManualClassifierGUI(FeatureUtils):
     def retrain_tick(self):
         self.build_models()
         if self.recent_buffer:
-            batch, labels = self.fetch_training_batch(self.max_batch)
-            semantic_batch = [emb for emb, _ in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
-            semantic_labels = [l for _, l in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
-            if semantic_batch:
-                self.train_semantic_head(semantic_batch, semantic_labels, epochs=settings.epochs, lr=settings.learning_rate)
-            if batch:
-                self.layout_model = self.train_model(features=batch, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
+            batch_data = self.recent_buffer[:self.max_batch]
+            self.recent_buffer = self.recent_buffer[self.max_batch:]
+            embeddings = []
+            layout_features = []
+            labels = []
+            for emb, feat, lbl in batch_data:
+                embeddings.append(emb)
+                layout_features.append(feat)
+                labels.append(lbl)
+            for emb, feat, lbl in batch_data:
+                self.training_data.append((emb, feat, lbl))
+            if embeddings:
+                self.train_semantic_head(embeddings, labels, epochs=settings.epochs, lr=settings.learning_rate)
+            if layout_features:
+                self.layout_model = self.train_model(features=layout_features, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
             self.page_retrain_count = 0
             self.replay_retrain_count = 0
-            if self.launch_gui: print(f"Train: fresh batch: {len(batch)} examples")
+            if self.launch_gui:
+                print(f"Train: fresh batch: {len(batch_data)} examples")
         elif self.replay_retrain_count < self.replay_retrain_limit and len(self.training_data) > 0:
             self.replay_retrain_count += 1
-            batch, labels = self.fetch_training_batch(self.max_batch)
-            semantic_batch = [emb for emb, _ in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
-            semantic_labels = [l for _, l in self.semantic_training_data[-len(batch):]] if hasattr(self, 'semantic_training_data') else []
-            if semantic_batch:
-                self.train_semantic_head(semantic_batch, semantic_labels, epochs=1, lr=settings.learning_rate * 0.5)
-            if batch:
-                self.layout_model = self.train_model(features=batch, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
-            if self.launch_gui: print(f"Train: Replay {self.replay_retrain_count}/{self.replay_retrain_limit}, Loss: replaying {len(batch)} examples")
+            replay_size = min(self.max_batch, len(self.training_data))
+            replay_data = self.training_data[-replay_size:]
+            embeddings = []
+            layout_features = []
+            labels = []
+            for emb, feat, lbl in replay_data:
+                embeddings.append(emb)
+                layout_features.append(feat)
+                labels.append(lbl)
+            if embeddings:
+                self.train_semantic_head(embeddings, labels, epochs=1, lr=settings.learning_rate * 0.5)
+            if layout_features:
+                self.layout_model = self.train_model(features=layout_features, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
+            if self.launch_gui:
+                print(f"Train: Replay {self.replay_retrain_count}/{self.replay_retrain_limit}, Loss: replaying {len(replay_data)} examples")
         else:
-            if self.launch_gui: print("Train: No data or replay limit reached")
+            if self.launch_gui:
+                print("Train: No data or replay limit reached")
 
     def fetch_training_batch(self, max_items):
         fb, lb = [], []
         if not self.training_data and not self.recent_buffer:
             return fb, lb
-        if self.launch_gui: print(f"Buffer size: {len(self.recent_buffer)}, Training pool size: {len(self.training_data)}")
+        if self.launch_gui:
+            print(f"Buffer size: {len(self.recent_buffer)}, Training pool size: {len(self.training_data)}")
         n_recent = min(len(self.recent_buffer), max_items)
         for _ in range(n_recent):
-            f, l = self.recent_buffer.pop(0)
-            fb.append(f)
-            lb.append(l)
-            self.training_data.append((f, l))
+            emb, feat, lbl = self.recent_buffer.pop(0)
+            fb.append(feat)
+            lb.append(lbl)
+            self.training_data.append((emb, feat, lbl))
         remaining = max_items - n_recent
         if remaining > 0 and self.training_data:
             replay_size = min(remaining, len(self.training_data))
             replay_data = self.training_data[-replay_size:]
-            self.training_data = self.training_data[:-replay_size]
-            for f, l in replay_data:
-                fb.append(f)
-                lb.append(l)
-                self.training_data.insert(0, (f, l))
-        n_sem_recent = min(len(self.semantic_recent_buffer), max_items)
-        for _ in range(n_sem_recent):
-            emb, l = self.semantic_recent_buffer.pop(0)
-            self.semantic_training_data.append((emb, l))
-        if remaining > 0 and self.semantic_training_data:
-            replay_size = min(remaining, len(self.semantic_training_data))
-            replay_data = self.semantic_training_data[-replay_size:]
-            self.semantic_training_data = self.semantic_training_data[:-replay_size]
-            for emb, l in replay_data:
-                self.semantic_training_data.insert(0, (emb, l))
+            for emb, feat, lbl in replay_data:
+                fb.append(feat)
+                lb.append(lbl)
         return fb, lb
 
     def train_semantic_head(self, embeddings, labels, epochs=1, lr=None, print_loss=True):
@@ -326,23 +332,8 @@ class ManualClassifierGUI(FeatureUtils):
         lab = label_map[label]
         self.semantic_class_counts[lab] += 1
         emb = np.asarray(block.get('raw_embedding', [0.0] * 384), dtype=np.float32)
-        self.semantic_head.train()
-        device = settings.device
-        class_counts = self.semantic_class_counts
-        total_samples = sum(class_counts)
-        class_weights = torch.tensor([total_samples / (5 * max(count, 1)) for count in class_counts], dtype=torch.float32, device=device)
-        criterion_weighted = nn.CrossEntropyLoss(weight=class_weights)
-        t_emb = torch.tensor(emb, dtype=torch.float32, device=device).unsqueeze(0)
-        t_label = torch.tensor([lab], dtype=torch.long, device=device)
-        self.semantic_optimizer.zero_grad()
-        logits = self.semantic_head(t_emb)
-        loss = criterion_weighted(logits, t_label)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.semantic_head.parameters(), 1.0)
-        self.semantic_optimizer.step()
-        self.semantic_recent_buffer.append((emb.tolist(), lab))
         features = self.get_global_features(block, doc_width, doc_height, True)
-        self.recent_buffer.append((features, lab))
+        self.recent_buffer.append((emb.tolist(), features, lab))
         if not hasattr(self, '_scheduler_started'):
             self._scheduler_started = True
             self.schedule_retrainer()
@@ -350,8 +341,14 @@ class ManualClassifierGUI(FeatureUtils):
     def get_local_training_data(self):
         if not self.training_data:
             return [], []
-        features, labels = zip(*self.training_data)
-        return list(features), list(labels)
+        embeddings = []
+        features = []
+        labels = []
+        for emb, feat, lbl in self.training_data:
+            embeddings.append(emb)
+            features.append(feat)
+            labels.append(lbl)
+        return features, labels
 
     def update_model_and_predictions(self):
         if self.training_lock or not self.page_buffer:
@@ -438,12 +435,12 @@ class ManualClassifierGUI(FeatureUtils):
                     p = probs_np[idx]
                     top_idx = int(np.argmax(p))
                     conf = float(p[top_idx])
-                    conf_str = " ".join(f"{short_label_names[j]}:{p[j]:.3f}" for j in range(5))
+                    conf_str = " ".join(f"{short_label_names[j]}:{p[j]:.2f}" for j in range(5))
                     text_snip = block['text'].replace('\n', ' ').strip()
                     if len(text_snip) > 4:
                         text_snip = text_snip[:4].rstrip()
                     text_snip = "\"" + text_snip + "\""
-                    print(f"{block['global_idx']:4d}: {text_snip} {conf_str} (top {short_label_names[top_idx]} {conf:.2f})")
+                    print(f"{block['global_idx']:3d}: {text_snip:<6} {conf_str} (top {short_label_names[top_idx]} {conf:.2f})")
         self.page_retrain_count = 0
         self.page_retrain_limit = len(self.current_page_blocks)
         self.replay_retrain_count = 0
@@ -536,7 +533,7 @@ class ManualClassifierGUI(FeatureUtils):
             print(f"Loaded pretrained weights")
 
 def main():
-    file_name = input("Enter PDF file basename: ").strip()
+    file_name = input("Enter PDF file basename: ").strip() or "test"
     pdf_path = f"{file_name}.pdf"
     if not os.path.exists(pdf_path):
         print(f"Error: {pdf_path} not found")
