@@ -144,8 +144,8 @@ class ManualClassifierGUI(FeatureUtils):
             return logits_np.squeeze(0), probs_np.squeeze(0)
         return logits_np, probs_np
 
-    def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None, dump=False):
-        if dump:
+    def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None):
+        if getattr(settings, 'dump_features', False) and for_training:
             current_page = block.get('page_num', -1)
             if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
                 self._dump_counter = 0
@@ -187,7 +187,7 @@ class ManualClassifierGUI(FeatureUtils):
         feature_names = orig_names + glob_names + semantic_names
         if len(features) != settings.input_feature_length:
             raise ValueError(f"Feature length mismatch: got {len(features)}, expected {settings.input_feature_length}")
-        if dump:
+        if getattr(settings, 'dump_features', False) and for_training:
             self.dump_block_features(features, feature_names)
         return features
 
@@ -273,7 +273,8 @@ class ManualClassifierGUI(FeatureUtils):
         total_samples = len(labels)
         class_weights = torch.tensor([total_samples / (5 * max(count, 1)) for count in class_counts], dtype=torch.float32, device=device)
         if self.launch_gui:
-            print(f"Semantic class weights: {class_weights.cpu().numpy()}")
+            formatted_weights = ", ".join(f"{w:.2f}" for w in class_weights.cpu().numpy())
+            print(f"Semantic class weights: [{formatted_weights}]")
         optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=(lr or settings.learning_rate) * 0.8, weight_decay=1e-4)
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         dataset = torch.utils.data.TensorDataset(X, y)
