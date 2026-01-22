@@ -211,12 +211,11 @@ class ManualClassifierGUI(FeatureUtils):
                 embeddings.append(emb)
                 layout_features.append(feat)
                 labels.append(lbl)
-            for emb, feat, lbl in batch_data:
                 self.training_data.append((emb, feat, lbl))
             if embeddings:
                 self.train_semantic_head(embeddings, labels, epochs=settings.epochs, lr=settings.learning_rate)
             if layout_features:
-                self.layout_model = self.train_model(features=layout_features, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
+                self.train_model(features=layout_features, labels=labels, epochs=settings.epochs, lr=settings.learning_rate)
             self.page_retrain_count = 0
             self.replay_retrain_count = 0
             if self.launch_gui:
@@ -235,7 +234,7 @@ class ManualClassifierGUI(FeatureUtils):
             if embeddings:
                 self.train_semantic_head(embeddings, labels, epochs=1, lr=settings.learning_rate * 0.5)
             if layout_features:
-                self.layout_model = self.train_model(features=layout_features, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
+                self.train_model(features=layout_features, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
             if self.launch_gui:
                 print(f"Train: Replay {self.replay_retrain_count}/{self.replay_retrain_limit}, Loss: replaying {len(replay_data)} examples")
         else:
@@ -256,9 +255,9 @@ class ManualClassifierGUI(FeatureUtils):
             self.training_data.append((emb, feat, lbl))
         remaining = max_items - n_recent
         if remaining > 0 and self.training_data:
-            replay_size = min(remaining, len(self.training_data))
-            replay_data = self.training_data[-replay_size:]
-            for emb, feat, lbl in replay_data:
+            idxs = np.random.choice(len(self.training_data), size=min(remaining, len(self.training_data)), replace=False)
+            for i in idxs:
+                _, feat, lbl = self.training_data[i]
                 fb.append(feat)
                 lb.append(lbl)
         return fb, lb
@@ -271,7 +270,8 @@ class ManualClassifierGUI(FeatureUtils):
         y = torch.tensor(labels, dtype=torch.long, device=device)
         class_counts = np.bincount(labels, minlength=5)
         total_samples = len(labels)
-        class_weights = torch.tensor([total_samples / (5 * max(count, 1)) for count in class_counts], dtype=torch.float32, device=device)
+        smooth = 1.0
+        class_weights = torch.tensor([(total_samples + 5 * smooth) / (5 * (count + smooth)) for count in class_counts], dtype=torch.float32, device=device)
         if self.launch_gui:
             formatted_weights = ", ".join(f"{w:.2f}" for w in class_weights.cpu().numpy())
             print(f"Semantic class weights: [{formatted_weights}]")
@@ -362,11 +362,12 @@ class ManualClassifierGUI(FeatureUtils):
                 feat = self.get_global_features(block, 612, 792, True)
                 batch.append((feat, label_map[item['label']]))
             if batch:
-                if any(lbl == '0' for _, lbl in batch):
-                    raise ValueError("Attempting to train on label '0' (unlabeled). Check labeling logic.")
+                if any(lbl == 0 for _, lbl in batch):
+                    raise ValueError("Attempting to train on label 0 (unlabeled). Check labeling logic.")
                 features, labels = zip(*batch)
-                if self.launch_gui: print(f"Training on {len(features)} blocks")
-                self.model = self.train_model(epochs=settings.epochs, lr=settings.learning_rate, features=list(features), labels=list(labels))
+                if self.launch_gui:
+                    print(f"Training on {len(features)} blocks")
+                self.train_model(epochs=settings.epochs, lr=settings.learning_rate, features=list(features), labels=list(labels))
             pred_labels = self.predict_current_page()
             for local_idx, global_idx in enumerate(self.global_indices):
                 if self.block_classifications[global_idx] == '0':
@@ -378,6 +379,7 @@ class ManualClassifierGUI(FeatureUtils):
     def predict_current_page(self):
         if not self.current_page_blocks:
             return []
+        device = settings.device
         self.layout_model.eval()
         self.semantic_head.eval()
         page_features = []
@@ -386,7 +388,7 @@ class ManualClassifierGUI(FeatureUtils):
             _, probs = self.get_semantic_logits(emb)
             feat = self.get_global_features(block, 612, 792, False, semantic_override=probs)
             page_features.append(feat)
-        X_test = torch.tensor(np.asarray(page_features, dtype=np.float32), dtype=torch.float32)
+        X_test = torch.tensor(np.asarray(page_features, dtype=np.float32), dtype=torch.float32, device=device)
         with torch.no_grad():
             outputs = self.layout_model(X_test)
             _, predictions = torch.max(outputs, 1)
