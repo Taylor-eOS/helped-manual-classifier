@@ -1,4 +1,5 @@
 import os, threading
+import torch
 from transformers import AutoTokenizer, AutoModel
 import numpy as np
 import settings
@@ -41,7 +42,6 @@ def get_embedding_jina(texts, batch_size=64):
     return np.vstack(all_vecs)
 
 def get_embedding_st(texts, batch_size=64):
-    import torch
     if isinstance(texts, str):
         texts = [texts]
     if not texts:

@@ -133,10 +133,11 @@ class PDFEvaluator:
         if settings.print_mistaken_predictions:
             with open('mistaken_predictions.txt', 'a') as f:
                 f.write("\nMistake counts:\n")
+                print('true for predicted')
                 for (pred, true), cnt in sorted(error_counts.items(), key=lambda x: -x[1]):
                     total = true_counts[true]
                     prop = cnt / total
-                    f.write(f"{true}-{pred}: {cnt}/{total} ({cnt/total*100:.0f}%)\n")
+                    f.write(f"{true} for {pred}: {cnt}/{total} ({cnt/total*100:.0f}%)\n")
         torch.save(self.gui.layout_model.state_dict(), 'weights_layout.pt')
         torch.save(self.gui.semantic_head.state_dict(), 'weights_semantic.pt')
         return final_acc
@@ -147,7 +148,7 @@ class PDFEvaluator:
             pred = page_pred[i]
             if pred != true:
                 snippet = blocks[i].get('text', '')[:30].replace('\n', '\\n')
-                msg = f"Page {page_number}, block {i}: {pred}-{true}   ({snippet})"
+                msg = f"Page {page_number}, block {i}: {true} for {pred}   ({snippet})"
                 if settings.print_predictions:
                     print(msg)
                 with open('mistaken_predictions.txt', 'a') as f:

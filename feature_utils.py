@@ -5,23 +5,39 @@ import settings
 
 class FeatureUtils:
     def compute_global_stats(self):
-        if not self.all_blocks:
+        if not getattr(self, 'all_blocks', None):
+            self.global_stats = {'features': {}, 'total_blocks': 0, 'total_pages': len(getattr(self, 'doc', []))}
             return
-        fs = [b['font_size'] for b in self.all_blocks]
-        ws = [b['width'] for b in self.all_blocks]
-        hs = [b['height'] for b in self.all_blocks]
-        ls = [b['letter_count'] for b in self.all_blocks]
-        ps = [b['position'] for b in self.all_blocks]
-        tp = len(self.all_blocks)
-        pg = len(self.doc)
-        m, s = np.mean, np.std
-        self.global_stats = {
-            'font_size_mean': m(fs), 'font_size_std': s(fs),
-            'width_mean': m(ws),     'width_std': s(ws),
-            'height_mean': m(hs),    'height_std': s(hs),
-            'letter_count_mean': m(ls), 'letter_count_std': s(ls),
-            'position_mean': m(ps),  'position_std': s(ps),
-            'total_blocks': tp,      'total_pages': pg}
+        numeric_values = {}
+        for b in self.all_blocks:
+            for k, v in b.items():
+                if k in ('raw_embedding', 'text'):
+                    continue
+                if isinstance(v, (list, tuple, np.ndarray)):
+                    continue
+                try:
+                    if isinstance(v, (bool, np.bool_)):
+                        numeric_values.setdefault(k, []).append(1.0 if v else 0.0)
+                    elif isinstance(v, (int, float, np.number)) and not isinstance(v, (str, bytes)):
+                        numeric_values.setdefault(k, []).append(float(v))
+                except Exception:
+                    continue
+        feature_stats = {}
+        for k, vals in numeric_values.items():
+            arr = np.asarray(vals, dtype=np.float64)
+            if arr.size == 0:
+                continue
+            p_low = float(np.percentile(arr, 0.5))
+            p_high = float(np.percentile(arr, 99.5))
+            feature_stats[k] = {
+                'min': float(np.min(arr)),
+                'max': float(np.max(arr)),
+                'mean': float(np.mean(arr)),
+                'std': float(np.std(arr)),
+                'p005': p_low,
+                'p995': p_high
+            }
+        self.global_stats = {'features': feature_stats, 'total_blocks': len(self.all_blocks), 'total_pages': len(getattr(self, 'doc', []))}
 
     def dump_block_features(self, feats, names):
         feature_file = settings.feature_data_file
@@ -32,7 +48,7 @@ class FeatureUtils:
         with open(feature_file, 'a', encoding='utf-8') as f:
             if first:
                 f.write(','.join(names) + '\n')
-            line = ','.join(f"{x:.5f}" for x in feats) + '\n'
+            line = ','.join(f"{x:.3f}" for x in feats) + '\n'
             f.write(line)
         self._dump_counter = getattr(self, '_dump_counter', 0) + 1
 

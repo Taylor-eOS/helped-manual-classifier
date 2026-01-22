@@ -166,7 +166,7 @@ class ManualClassifierGUI(FeatureUtils):
             fs = block.get('font_size', 0.0)
             all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
             p = self.get_percentile(fs, all_fs)
-            z = (fs - self.global_stats['font_size_mean']) / (self.global_stats['font_size_std'] + 1e-6)
+            z = (fs - self.global_stats['features'].get('font_size', {}).get('mean', 0.0)) / (self.global_stats['features'].get('font_size', {}).get('std', 1.0) + 1e-6)
             pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
             c = float(self.is_consistent_across_pages(block))
             glob = [p, z, pg, c]
