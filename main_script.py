@@ -16,6 +16,7 @@ from gui_core import load_current_page, draw_blocks, update_button_highlight
 from feature_utils import FeatureUtils
 from embed_semantic import get_raw_embedding
 from model_semantic import SemanticHead, LayoutClassifier
+from global_features import build_orig_features, build_global_stat_features, build_semantic_features
 import settings
 
 letter_labels = {'h':'header','b':'body','f':'footer','q':'quote','e':'exclude'}
@@ -150,39 +151,9 @@ class ManualClassifierGUI(FeatureUtils):
             if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
                 self._dump_counter = 0
                 self._last_dump_page = current_page
-        orig = []
-        orig_names = []
-        for name in settings.BASE_FEATURES:
-            v = block.get(name, 0.0)
-            scale = settings.SCALES.get(name)
-            if isinstance(scale, str):
-                denom = locals().get(scale, 1.0)
-                v = v / denom if denom else 0.0
-            elif scale:
-                v = v / scale
-            orig.append(float(v))
-            orig_names.append(name)
-        if self.global_stats and 'font_size' in block:
-            fs = block.get('font_size', 0.0)
-            all_fs = [b.get('font_size', 0.0) for b in self.all_blocks]
-            p = self.get_percentile(fs, all_fs)
-            z = (fs - self.global_stats['features'].get('font_size', {}).get('mean', 0.0)) / (self.global_stats['features'].get('font_size', {}).get('std', 1.0) + 1e-6)
-            pg = block.get('page_num', 0) / max(1, self.global_stats.get('total_pages', 1))
-            c = float(self.is_consistent_across_pages(block))
-            glob = [p, z, pg, c]
-        else:
-            glob = [0.0, 0.0, 0.0, 0.0]
-        glob_names = ['font_size_percentile', 'font_size_zscore', 'page_frac', 'consistency']
-        if semantic_override is not None:
-            semantic_conf = list(semantic_override)
-        else:
-            emb = block.get('raw_embedding', [0.0] * 384)
-            _, probs = self.get_semantic_logits(emb)
-            semantic_conf = probs.tolist()
-        semantic_conf = semantic_conf[:5]
-        if len(semantic_conf) != 5:
-            raise ValueError(f"Semantic head returned {len(semantic_conf)} classes, expected 5")
-        semantic_names = [f'semantic_{i}' for i in range(len(semantic_conf))]
+        orig, orig_names = build_orig_features(block, doc_width, doc_height, settings.BASE_FEATURES, settings.SCALES)
+        glob, glob_names = build_global_stat_features(block, getattr(self, 'all_blocks', []), getattr(self, 'global_stats', None), self.get_percentile, self.is_consistent_across_pages)
+        semantic_conf, semantic_names = build_semantic_features(block, semantic_override, self.get_semantic_logits)
         features = orig + glob + semantic_conf
         feature_names = orig_names + glob_names + semantic_names
         if len(features) != settings.input_feature_length:
