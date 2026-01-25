@@ -146,19 +146,19 @@ class ManualClassifierGUI(FeatureUtils):
         return logits_np, probs_np
 
     def get_global_features(self, block, doc_width, doc_height, for_training, semantic_override=None):
-        if getattr(settings, 'dump_features', False) and for_training:
+        if settings.dump_features and for_training:
             current_page = block.get('page_num', -1)
             if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
                 self._dump_counter = 0
                 self._last_dump_page = current_page
         orig, orig_names = build_orig_features(block, doc_width, doc_height, settings.BASE_FEATURES, settings.SCALES)
-        glob, glob_names = build_global_stat_features(block, getattr(self, 'all_blocks', []), getattr(self, 'global_stats', None), self.get_percentile, self.is_consistent_across_pages)
+        glob, glob_names = build_global_stat_features(block, self.all_blocks, self.global_stats, self.get_percentile, self.is_consistent_across_pages)
         semantic_conf, semantic_names = build_semantic_features(block, semantic_override, self.get_semantic_logits)
         features = orig + glob + semantic_conf
         feature_names = orig_names + glob_names + semantic_names
         if len(features) != settings.input_feature_length:
             raise ValueError(f"Feature length mismatch: got {len(features)}, expected {settings.input_feature_length}")
-        if getattr(settings, 'dump_features', False) and for_training:
+        if settings.dump_features and for_training:
             self.dump_block_features(features, feature_names)
         return features
 

@@ -95,9 +95,10 @@ class PDFEvaluator:
         return page_index
 
     def evaluate(self):
-        all_blocks, all_texts = self._compile_all_blocks()
-        self._attach_embeddings(all_blocks, all_texts)
-        page_index = self._page_slices(all_blocks)
+        self.prepare_gui_statistics()
+        page_index = defaultdict(list)
+        for b in self.gui.all_blocks:
+            page_index[b['page_num']].append(b)
         total_correct = 0
         total_samples = 0
         error_counts = defaultdict(int)
@@ -154,6 +155,28 @@ class PDFEvaluator:
                 with open('mistaken_predictions.txt', 'a') as f:
                     f.write(msg + '\n')
                 error_counts[(pred, true)] += 1
+
+    def prepare_gui_statistics(self):
+        all_blocks = []
+        all_texts = []
+        for p in range(self.total_pages):
+            page_blks = self.process_page(p)
+            for b in page_blks:
+                b['page_num'] = p
+            all_blocks.extend(page_blks)
+            all_texts.extend([b['text'] for b in page_blks])
+        if all_texts:
+            texts_length = len(all_texts)
+            print(f"Creating {texts_length} embeddings")
+            emb = get_raw_embedding(all_texts, texts_length)
+        else:
+            emb = np.zeros((0, 384))
+        for i, b in enumerate(all_blocks):
+            raw = emb[i] if i < emb.shape[0] else np.zeros(384)
+            b['raw_embedding'] = raw.tolist()
+            b['global_idx'] = i
+        self.gui.all_blocks = all_blocks
+        self.gui.compute_global_stats()
 
 def main():
     open(settings.feature_data_file, "w").close()

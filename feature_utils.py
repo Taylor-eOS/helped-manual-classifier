@@ -5,7 +5,7 @@ import settings
 
 class FeatureUtils:
     def compute_global_stats(self):
-        if not getattr(self, 'all_blocks', None):
+        if not self.all_blocks:
             self.global_stats = {'features': {}, 'total_blocks': 0, 'total_pages': len(getattr(self, 'doc', []))}
             return
         numeric_values = {}
@@ -50,7 +50,7 @@ class FeatureUtils:
                 f.write(','.join(names) + '\n')
             line = ','.join(f"{x:.3f}" for x in feats) + '\n'
             f.write(line)
-        self._dump_counter = getattr(self, '_dump_counter', 0) + 1
+        self._dump_counter = self._dump_counter + 1
 
     def is_consistent_across_pages(self, block):
         if not self.all_blocks:
