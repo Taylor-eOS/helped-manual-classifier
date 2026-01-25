@@ -203,9 +203,9 @@ class ManualClassifierGUI(FeatureUtils):
                 layout_features.append(feat)
                 labels.append(lbl)
             if embeddings:
-                self.train_semantic_head(embeddings, labels, epochs=1, lr=settings.learning_rate * 0.5)
+                self.train_semantic_head(embeddings, labels, epochs=settings.retrain_epochs, lr=settings.learning_rate * 0.5)
             if layout_features:
-                self.train_model(features=layout_features, labels=labels, epochs=1, lr=settings.learning_rate * 0.5)
+                self.train_model(features=layout_features, labels=labels, epochs=settings.retrain_epochs, lr=settings.learning_rate * 0.5)
             if self.launch_gui:
                 print(f"Train: Replay {self.replay_retrain_count}/{self.replay_retrain_limit}, Loss: replaying {len(replay_data)} examples")
         else:

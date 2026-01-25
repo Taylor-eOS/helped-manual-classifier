@@ -25,16 +25,18 @@ def drop_to_file(block_text, block_type, block_page_number):
 
 def extract_page_geometric_features(doc, page_num):
     page = doc.load_page(page_num)
+    page_height = page.rect.height
     raw_blocks = page.get_text("blocks")
     page_blocks = []
     for idx, block in enumerate(raw_blocks):
-        if len(block) < 6 or not block[4].strip(): continue
+        if len(block) < 6 or not block[4].strip():
+            continue
         x0, y0, x1, y1, text = block[:5]
         text = text.strip()
         page_blocks.append({
             'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,
             'width': x1 - x0, 'height': y1 - y0,
-            'position': y0 / page.rect.height,
+            'position': y0 / page_height,
             'letter_count': calculate_letter_count(text),
             'font_size': calculate_average_font_size(page, idx),
             'relative_font_size': None,
@@ -47,7 +49,10 @@ def extract_page_geometric_features(doc, page_num):
             'squared_entropy': calculate_entropy(text)**2,
             'page_num': page_num,
             'odd_even': 1 if page_num % 2 == 0 else 0,
-            'text': text, 'type': '0'})
+            'text': text, 'type': '0'
+        })
+    page_blocks = sorted(page_blocks, key=lambda b: b['y0'])
+    page_blocks = add_vertical_neighbour_distances(page_blocks, page_height)
     page_blocks = process_drop_cap(page_blocks)
     return page_blocks
 
@@ -68,12 +73,7 @@ def extract_blocks(pdf_path):
     return blocks
 
 def get_base_features():
-    base = [
-        'odd_even', 'x0', 'y0', 'width', 'height', 'position',
-        'letter_count', 'font_size', 'relative_font_size',
-        'num_lines', 'punctuation_proportion', 'average_words_per_sentence',
-        'starts_with_number', 'capitalization_proportion',
-        'average_word_commonality', 'squared_entropy']
+    base = settings.BASE_FEATURES
     base += [f'embed_{i}' for i in range(settings.embedding_components)]
     return base
 
@@ -148,4 +148,23 @@ def process_drop_cap(page_data):
     for block in page_data:
         block['relative_font_size'] = block['font_size'] / max_size
     return page_data
+
+def add_vertical_neighbour_distances(blocks, page_height):
+    if not blocks:
+        return blocks
+    sentinel = page_height * 0.2
+    for i, block in enumerate(blocks):
+        if i == 0:
+            dist_prev = sentinel
+        else:
+            prev = blocks[i - 1]
+            dist_prev = block['y0'] - prev['y1']
+        if i == len(blocks) - 1:
+            dist_next = sentinel
+        else:
+            next_block = blocks[i + 1]
+            dist_next = next_block['y0'] - block['y1']
+        block['dist_prev_norm'] = dist_prev / page_height
+        block['dist_next_norm'] = dist_next / page_height
+    return blocks
 
