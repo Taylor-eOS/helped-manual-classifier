@@ -137,6 +137,8 @@ def calculate_entropy(text):
     return -np.sum(probs * np.log2(probs))
 
 def process_drop_cap(page_data):
+    if not page_data:
+        return page_data
     font_sizes = [block['font_size'] for block in page_data]
     if not font_sizes:
         return page_data
@@ -147,9 +149,11 @@ def process_drop_cap(page_data):
         if block['font_size'] > threshold and block['letter_count'] < 10:
             if i + 1 < len(page_data):
                 page_data[i]['font_size'] = page_data[i+1]['font_size']
-    max_size = max(font_sizes)
+    adjusted_font_sizes = [block['font_size'] for block in page_data]
+    max_size = max(adjusted_font_sizes) if adjusted_font_sizes else 12.0
     for block in page_data:
-        block['relative_font_size'] = block['font_size'] / max_size
+        fs = block['font_size']
+        block['relative_font_size'] = fs / max_size if max_size > 0 else 1.0
     return page_data
 
 def add_vertical_neighbour_distances(blocks, page_height):

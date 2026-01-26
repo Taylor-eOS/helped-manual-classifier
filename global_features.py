@@ -1,23 +1,18 @@
 import numpy as np
 
-def build_orig_features(block, doc_width, doc_height, base_features, scales, per_page_stats):
+def build_orig_features(block, doc_width, doc_height, base_features, scales):
     orig = []
     orig_names = []
-    pn = block.get('page_num', -1)
-    pstats = per_page_stats.get(pn, {}) if per_page_stats else {}
     for name in base_features:
         v = block.get(name, 0.0)
-        if name in pstats:
-            min_v, rng = pstats[name]
-            v = (v - min_v) / rng
-        else:
-            scale = scales.get(name)
+        scale = scales.get(name)
+        if scale is not None:
             if isinstance(scale, str):
                 denom = {'doc_width': doc_width, 'doc_height': doc_height}.get(scale, 1.0)
                 if denom != 1.0:
-                    v = v / denom
+                    v /= denom
             elif isinstance(scale, (int, float)) and scale != 0.0:
-                v = v / scale
+                v /= scale
         orig.append(float(v))
         orig_names.append(name)
     return orig, orig_names
