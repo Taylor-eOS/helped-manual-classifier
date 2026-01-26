@@ -18,21 +18,20 @@ pretrain_learning_rate = 0.0007
 device = "cpu"
 print_mistaken_predictions = True
 load_pretraining_weights = True
-BASE_FEATURES = ['odd_even', 'x0', 'y0', 'width', 'height', 'position', 'letter_count', 'font_size', 'relative_font_size', 'num_lines', 'punctuation_proportion', 'average_words_per_sentence', 'starts_with_number', 'capitalization_proportion', 'average_word_commonality', 'squared_entropy', 'dist_prev_norm', 'dist_next_norm']
+BASE_FEATURES = ['odd_even', 'x0', 'y0', 'width', 'height', 'position', 'word_count', 'font_size', 'relative_font_size', 'num_lines', 'punctuation_proportion', 'average_words_per_sentence', 'starts_with_number', 'capitalization_proportion', 'average_word_commonality', 'squared_entropy', 'dist_prev_norm', 'dist_next_norm']
 SCALES = {
     'x0': 'doc_width',
     'y0': 'doc_height',
     'width': 'doc_width',
     'height': 'doc_height',
-    'letter_count': 100,
+    'word_count': 50,
     'font_size': 24,
     'num_lines': 10,
     'average_words_per_sentence': 10,
     'dist_prev_norm': 1.0,
-    'dist_next_norm': 1.0,
-    'dist_prev_norm': 0.1,
-    'dist_next_norm': 0.1
+    'dist_next_norm': 1.0
 }
+NORM_FEATURES = ['word_count', 'num_lines', 'average_words_per_sentence', 'average_word_commonality', 'squared_entropy', 'dist_prev_norm', 'dist_next_norm', 'font_size']
 global_features = 4
 embedding_components = 5
 input_feature_length = len(BASE_FEATURES) + global_features + embedding_components

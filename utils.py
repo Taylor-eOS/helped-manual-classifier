@@ -38,6 +38,7 @@ def extract_page_geometric_features(doc, page_num):
             'width': x1 - x0, 'height': y1 - y0,
             'position': y0 / page_height,
             'letter_count': calculate_letter_count(text),
+            'word_count': calculate_word_count(text),
             'font_size': calculate_average_font_size(page, idx),
             'relative_font_size': None,
             'num_lines': calculate_num_lines(page, idx),
@@ -88,8 +89,10 @@ def calculate_position(y0, page_height):
     return y0 / page_height
 
 def calculate_letter_count(text):
-    #return sum(c.isalpha() for c in text)
-    return sum(c.isalpha() or c.isnumeric() for c in text)
+    return sum(c.isalpha() for c in text)
+
+def calculate_word_count(text):
+    return len(text.split())
 
 def calculate_punctuation_proportion(text):
     total = len(text)

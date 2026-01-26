@@ -41,13 +41,16 @@ class PDFEvaluator:
 
     def process_page(self, page_num):
         blocks = extract_page_geometric_features(self.doc, page_num)
-        return process_drop_cap(blocks)
+        return blocks
 
-    def _predict_blocks(self, blocks, page_num, doc_width=612, doc_height=792):
+    def _predict_blocks(self, blocks, page_num):
         if not blocks:
             return []
         for block in blocks:
             block['page_num'] = page_num
+        page = self.doc.load_page(page_num)
+        doc_width = page.rect.width
+        doc_height = page.rect.height
         self.gui.layout_model.eval()
         self.gui.semantic_head.eval()
         feats = []
@@ -177,13 +180,25 @@ class PDFEvaluator:
             b['global_idx'] = i
         self.gui.all_blocks = all_blocks
         self.gui.compute_global_stats()
+        from collections import defaultdict
+        page_groups = defaultdict(list)
+        for block in self.gui.all_blocks:
+            page_groups[block['page_num']].append(block)
+        self.gui.per_page_stats = {}
+        norm_features = settings.NORM_FEATURES
+        for pn, pblocks in page_groups.items():
+            stats = {}
+            for feat in norm_features:
+                vals = [b.get(feat, 0.0) for b in pblocks]
+                if vals:
+                    min_v = min(vals)
+                    max_v = max(vals)
+                    rng = max_v - min_v + 1e-6
+                    stats[feat] = (min_v, rng)
+            self.gui.per_page_stats[pn] = stats
 
 def main():
     open(settings.feature_data_file, "w").close()
-    #if len(sys.argv) != 2:
-    #    print("Usage: add input pdf file basename as only argument")
-    #    sys.exit(1)
-    #name = sys.argv[1]
     evaluator = PDFEvaluator(f"{settings.test_file_basename}.pdf", "ground_truth.json")
     final_acc = evaluator.evaluate()
 

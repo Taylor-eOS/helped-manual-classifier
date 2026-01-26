@@ -1,16 +1,23 @@
 import numpy as np
 
-def build_orig_features(block, doc_width, doc_height, base_features, scales):
+def build_orig_features(block, doc_width, doc_height, base_features, scales, per_page_stats):
     orig = []
     orig_names = []
+    pn = block.get('page_num', -1)
+    pstats = per_page_stats.get(pn, {}) if per_page_stats else {}
     for name in base_features:
         v = block.get(name, 0.0)
-        scale = scales.get(name)
-        if isinstance(scale, str):
-            denom = {'doc_width': doc_width, 'doc_height': doc_height}.get(scale, 1.0)
-            v = v / denom if denom else 0.0
-        elif scale:
-            v = v / scale
+        if name in pstats:
+            min_v, rng = pstats[name]
+            v = (v - min_v) / rng
+        else:
+            scale = scales.get(name)
+            if isinstance(scale, str):
+                denom = {'doc_width': doc_width, 'doc_height': doc_height}.get(scale, 1.0)
+                if denom != 1.0:
+                    v = v / denom
+            elif isinstance(scale, (int, float)) and scale != 0.0:
+                v = v / scale
         orig.append(float(v))
         orig_names.append(name)
     return orig, orig_names
@@ -23,6 +30,8 @@ def build_global_stat_features(block, all_blocks, global_stats, get_percentile_f
         mean = global_stats['features'].get('font_size', {}).get('mean', 0.0)
         std = global_stats['features'].get('font_size', {}).get('std', 1.0)
         z = (fs - mean) / (std + 1e-6)
+        z = max(min(z, 5.0), -5.0)
+        z = (z + 5.0) / 10.0
         pg = block.get('page_num', 0) / max(1, global_stats.get('total_pages', 1))
         c = float(is_consistent_fn(block))
         glob = [p, z, pg, c]

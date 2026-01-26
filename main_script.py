@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 import numpy as np
-from collections import Counter
+from collections import Counter, defaultdict
 from wordfreq import word_frequency
 import threading
 import torch
@@ -127,6 +127,21 @@ class ManualClassifierGUI(FeatureUtils):
         self.all_blocks = all_blocks
         self.block_classifications = ['0'] * len(all_blocks)
         self.compute_global_stats()
+        page_groups = defaultdict(list)
+        for block in self.all_blocks:
+            page_groups[block['page_num']].append(block)
+        self.per_page_stats = {}
+        norm_features = settings.NORM_FEATURES
+        for pn, pblocks in page_groups.items():
+            stats = {}
+            for feat in norm_features:
+                vals = [b.get(feat, 0.0) for b in pblocks]
+                if vals:
+                    min_v = min(vals)
+                    max_v = max(vals)
+                    rng = max_v - min_v + 1e-6
+                    stats[feat] = (min_v, rng)
+            self.per_page_stats[pn] = stats
         self.build_models()
         return all_blocks
 
@@ -151,7 +166,7 @@ class ManualClassifierGUI(FeatureUtils):
             if not hasattr(self, '_last_dump_page') or self._last_dump_page != current_page:
                 self._dump_counter = 0
                 self._last_dump_page = current_page
-        orig, orig_names = build_orig_features(block, doc_width, doc_height, settings.BASE_FEATURES, settings.SCALES)
+        orig, orig_names = build_orig_features(block, doc_width, doc_height, settings.BASE_FEATURES, settings.SCALES, self.per_page_stats)
         glob, glob_names = build_global_stat_features(block, self.all_blocks, self.global_stats, self.get_percentile, self.is_consistent_across_pages)
         semantic_conf, semantic_names = build_semantic_features(block, semantic_override, self.get_semantic_logits)
         features = orig + glob + semantic_conf
