@@ -24,9 +24,8 @@ def build_global_stat_features(block, all_blocks, global_stats, get_percentile_f
         p = get_percentile_fn(fs, all_fs)
         mean = global_stats['features'].get('font_size', {}).get('mean', 0.0)
         std = global_stats['features'].get('font_size', {}).get('std', 1.0)
-        z = (fs - mean) / (std + 1e-6)
-        z = max(min(z, 5.0), -5.0)
-        z = (z + 5.0) / 10.0
+        z_raw = (fs - mean) / (std + 1e-6)
+        z = 1.0 / (1.0 + np.exp(-z_raw))
         pg = block.get('page_num', 0) / max(1, global_stats.get('total_pages', 1))
         c = float(is_consistent_fn(block))
         glob = [p, z, pg, c]
