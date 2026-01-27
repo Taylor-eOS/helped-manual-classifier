@@ -87,9 +87,6 @@ class ManualClassifierGUI(FeatureUtils):
     def build_models(self):
         device = settings.device
         input_dim = settings.input_feature_length
-        expected = len(settings.BASE_FEATURES) + 4 + 5
-        if input_dim != expected:
-            raise ValueError(f"input_feature_length {input_dim} != expected {expected}")
         if not hasattr(self, 'semantic_head') or self.semantic_head is None:
             self.semantic_head = SemanticHead(input_dim=384, hidden=128, num_classes=5).to(device)
             self.semantic_optimizer = torch.optim.AdamW(self.semantic_head.parameters(), lr=settings.learning_rate, weight_decay=1e-4)
@@ -305,6 +302,7 @@ class ManualClassifierGUI(FeatureUtils):
         self.semantic_class_counts[lab] += 1
         emb = np.asarray(block.get('raw_embedding', [0.0] * 384), dtype=np.float32)
         features = self.get_global_features(block, doc_width, doc_height, True)
+        check_feature_length(len(features))
         self.recent_buffer.append((emb.tolist(), features, lab))
         if not hasattr(self, '_scheduler_started'):
             self._scheduler_started = True
@@ -505,6 +503,13 @@ class ManualClassifierGUI(FeatureUtils):
         if os.path.exists(settings.pretrained_file):
             self.model.load_state_dict(torch.load(settings.pretrained_file))
             print(f"Loaded pretrained weights")
+
+def check_feature_length(actual_length):
+    expected_length = settings.input_feature_length
+    if actual_length != expected_length:
+        raise ValueError(f"Feature length mismatch: actual/expected {actual_length}/{expected_length}.")
+    elif settings.debug_model_weight_usage:
+        print(f"Feature length ok: {actual_length}/{expected_length}.")
 
 def main():
     file_name = input("Enter PDF file basename: ").strip() or "test"
